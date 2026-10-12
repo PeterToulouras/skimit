@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skimit report</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a map of classes on the left (methods as rows), a reading panel on the right; proof arrows drawn over the map. */
+:root {
+  --bg: #f3f5f8; --surface: #ffffff; --sunken: #e9edf2; --fg: #18202c; --muted: #5a6577; --line: #d5dbe4;
+  --select: #1d4fd7;
+  --path: #d03b3b; --infl: #e09400; --unpr: #6250d6; --iso: #12a06e;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161d; --surface: #1a202a; --sunken: #232a36; --fg: #e6eaf1; --muted: #9aa5b8; --line: #323b4a;
+  --select: #7ea2ff; --path: #d03b3b; --infl: #c98500; --unpr: #9085e9; --iso: #199e70; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a202a; --sunken: #232a36; --fg: #e6eaf1; --muted: #9aa5b8; --line: #323b4a;
+  --select: #7ea2ff; --path: #d03b3b; --infl: #c98500; --unpr: #9085e9; --iso: #199e70; color-scheme: dark }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 22px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 68ch; }
+code, .mono { font-family: var(--mono); font-size: 0.9em; }
+header { display: flex; flex-direction: column; gap: 8px; }
+.bar { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: inherit; font-weight: 500; color: var(--muted); background: none; border: 0; padding: 7px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: none; }
+.v-ON_PATH { --c: var(--path); } .v-INFLUENCES { --c: var(--infl); } .v-UNPROVEN { --c: var(--unpr); } .v-ISOLATED { --c: var(--iso); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+.map { position: relative; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.map svg path { fill: none; stroke: var(--select); stroke-width: 2; }
+.map svg path.soft { stroke-dasharray: 5 4; }
+.map svg polygon { fill: var(--select); }
+.pkg { display: flex; flex-direction: column; gap: 8px; }
+.pkg-name { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.classes { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px 34px; align-items: start; }
+.cls { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.cls-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 10px 6px; }
+.cls-head strong { font-weight: 600; overflow-wrap: anywhere; }
+.pos { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.rows { display: flex; flex-direction: column; padding: 0 4px 4px; gap: 2px; }
+.row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+  background: color-mix(in srgb, var(--c) 9%, transparent); border: 1px solid transparent; border-radius: 4px; padding: 5px 6px; cursor: pointer; min-width: 0; }
+.row:hover { border-color: var(--c); }
+.row:focus-visible, .seg button:focus-visible, .item:focus-visible, .link:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
+.row .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tag { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.tag.sink { background: var(--path); color: var(--surface); }
+.tag.chg { border: 1px solid var(--fg); color: var(--fg); }
+.map.picked .row:not(.inchain) { opacity: 0.38; }
+.row.inchain { border-color: var(--select); background: color-mix(in srgb, var(--select) 12%, var(--surface)); }
+.row.sel { box-shadow: 0 0 0 2px var(--select); }
+aside { display: flex; flex-direction: column; gap: 22px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); min-width: 0; }
+@media (max-width: 900px) { aside { position: static; } }
+.panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.detail { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.detail .name { font-family: var(--mono); font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--c); }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); font-size: 12.5px; }
+.steps .via { color: var(--muted); font-family: var(--sans); font-size: 12px; padding-left: 14px; }
+.link { font: inherit; color: var(--fg); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; overflow-wrap: anywhere; }
+.small { font-size: 13px; color: var(--muted); }
+.bucket { display: flex; flex-direction: column; gap: 4px; }
+.bucket-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.item { display: block; width: 100%; text-align: left; font-family: var(--mono); font-size: 12.5px; color: var(--fg); background: none; border: 0; border-radius: 4px; padding: 3px 6px 3px 16px; cursor: pointer; overflow-wrap: anywhere; }
+.item:hover { background: var(--sunken); }
+.item em { font-family: var(--sans); font-style: normal; color: var(--muted); font-size: 12px; }
+.shape { margin: 0; padding-left: 18px; font-size: 13px; color: var(--fg); display: flex; flex-direction: column; gap: 2px; }
+pre.diff { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.55; overflow-x: auto; }
+pre.diff .add { color: var(--iso); font-weight: 600; }
+.search { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; width: 220px; max-width: 100%; }
+.search:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
+.note { font-size: 13px; color: var(--muted); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand svg { flex: none; }
+.brand rect { fill: var(--fg); } .brand rect.hit { fill: var(--path); } .brand rect.dim { opacity: .28; }
+</style>
+
+</head>
+<body style="margin:0">
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect class="dim" x="4" y="5" width="20" height="4" rx="2"/><rect class="dim" x="4" y="11" width="14" height="4" rx="2"/><rect class="hit" x="4" y="17" width="24" height="4" rx="2"/><rect class="dim" x="4" y="23" width="16" height="4" rx="2"/></svg>
+      <h1 id="title">skimit report</h1>
+    </div>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Version" id="versions">
+      <button id="btn-base" type="button" aria-pressed="false">Before</button>
+      <button id="btn-head" type="button" aria-pressed="true">After</button>
+    </div>
+    <div class="seg" role="group" aria-label="Scope" id="scopes">
+      <button id="btn-relevant" type="button" aria-pressed="false">Relevant classes</button>
+      <button id="btn-all" type="button" aria-pressed="true">All classes</button>
+    </div>
+    <input class="search" id="search" type="search" placeholder="Filter by class or method" aria-label="Filter by class or method">
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <main>
+    <div class="map" id="map"></div>
+    <aside>
+      <section class="panel">
+        <h2>Selected method</h2>
+        <div class="detail" id="detail"></div>
+      </section>
+      <section class="panel" id="manifest"></section>
+    </aside>
+  </main>
+</div>
+
+<script>
+const DATA = __DATA__;
+const LABEL = { ON_PATH: "On path", INFLUENCES: "Influences", UNPROVEN: "Unproven", ISOLATED: "Isolated" };
+const BUCKET = { MUST: "Must review", SHOULD: "Should review", SKIP: "Skip the body" };
+const BUCKET_V = { MUST: "ON_PATH", SHOULD: "INFLUENCES", SKIP: "ISOLATED" };
+const HAS_DIFF = !!DATA.diff;
+let mode = "head";
+let scope = DATA.head.methods.length > 300 ? "relevant" : "all";
+let query = "";
+let selected = null;
+if (HAS_DIFF) { const first = DATA.diff.changes.find(c => c.bucket === "MUST" && c.kind !== "removed") || DATA.diff.changes.find(c => c.kind !== "removed"); if (first) selected = first.method; }
+if (!selected) { const m = DATA.head.methods.find(x => x.verdict === "ON_PATH" && x.witness.length > 1); if (m) selected = m.method; }
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const short = name => name.slice(name.indexOf(".") + 1);
+
+function current() { return DATA[mode] || DATA.head; }
+function byId(id) { return current().methods.find(m => m.method === id); }
+function nameOf(id) {
+  const m = byId(id);
+  if (m) return m.name;
+  const cls = id.slice(0, id.indexOf("#")).split(".").pop();
+  return cls + "." + id.slice(id.indexOf("#") + 1, id.indexOf("("));
+}
+
+function renderLegend() {
+  const box = $("legend"); box.replaceChildren();
+  for (const v of Object.keys(LABEL)) {
+    const n = current().methods.filter(m => m.verdict === v).length;
+    const s = el("span", "v-" + v); s.append(el("i", "sw"), el("b", null, n), document.createTextNode(LABEL[v].toLowerCase()));
+    box.append(s);
+  }
+}
+
+function renderMap() {
+  const map = $("map"); map.replaceChildren();
+  const d = current();
+  const changes = HAS_DIFF && mode === "head" ? Object.fromEntries(DATA.diff.changes.map(c => [c.method, c])) : {};
+  const pos = Object.fromEntries(d.classes.map(c => [c.class, c]));
+  const relevant = new Set();
+  if (scope === "relevant") {
+    const keep = id => { const m = byId(id); if (m) relevant.add(m.class); };
+    d.sinks.forEach(keep);
+    if (HAS_DIFF && mode === "head") DATA.diff.changes.forEach(c => { keep(c.method); c.witness.forEach(keep); });
+    else d.methods.filter(m => m.verdict === "ON_PATH").forEach(m => relevant.add(m.class));
+    const s = byId(selected); if (s) { relevant.add(s.class); s.witness.forEach(keep); }
+  }
+  const q = query.trim().toLowerCase();
+  const pkgs = new Map();
+  let shown = 0;
+  for (const m of d.methods) {
+    if (scope === "relevant" && !relevant.has(m.class)) continue;
+    if (q && !m.name.toLowerCase().includes(q) && !m.class.toLowerCase().includes(q)) continue;
+    shown++;
+    const pkg = m.class.slice(0, m.class.lastIndexOf("."));
+    if (!pkgs.has(pkg)) pkgs.set(pkg, new Map());
+    if (!pkgs.get(pkg).has(m.class)) pkgs.get(pkg).set(m.class, []);
+    pkgs.get(pkg).get(m.class).push(m);
+  }
+  for (const [pkg, classes] of pkgs) {
+    const sec = el("div", "pkg"); sec.append(el("div", "pkg-name", pkg));
+    const grid = el("div", "classes");
+    for (const [cls, methods] of classes) {
+      const card = el("div", "cls"), head = el("div", "cls-head");
+      head.append(el("strong", null, cls.split(".").pop()));
+      const p = pos[cls];
+      if (p) head.append(el("span", "pos", p.position.toLowerCase() + " · " + p.dependents + (p.dependents === 1 ? " dependent" : " dependents")));
+      const rows = el("div", "rows");
+      for (const m of methods) {
+        const b = el("button", "row v-" + m.verdict); b.type = "button"; b.dataset.id = m.method;
+        b.title = LABEL[m.verdict] + ": " + m.reason;
+        b.append(el("i", "sw"), el("span", "nm", short(m.name)));
+        if (d.sinks.includes(m.method)) b.append(el("span", "tag sink", "sink " + m.domains.join(" ")));
+        if (changes[m.method]) b.append(el("span", "tag chg", changes[m.method].kind));
+        b.addEventListener("click", () => select(m.method));
+        rows.append(b);
+      }
+      card.append(head, rows); grid.append(card);
+    }
+    sec.append(grid); map.append(sec);
+  }
+  if (!shown) map.append(el("p", "note", "No methods match."));
+  else if (shown < d.methods.length) map.append(el("p", "note", "Showing " + shown + " of " + d.methods.length + " methods."));
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.id = "arrows"; map.append(svg);
+}
+
+function renderDetail() {
+  const box = $("detail"); box.replaceChildren();
+  const m = byId(selected);
+  if (!m) { box.append(el("p", "small", "Click a method on the map to see its verdict and the proof.")); return; }
+  box.append(el("div", "name", m.name));
+  const pill = el("span", "pill v-" + m.verdict); pill.append(el("i", "sw"), document.createTextNode(LABEL[m.verdict] + (m.domains.length ? " · " + m.domains.join(", ") : "")));
+  box.append(pill);
+  box.append(el("p", null, "It " + m.reason + "."));
+  if (m.witness.length > 1) {
+    box.append(el("h2", null, "Proof"));
+    const ol = el("ol", "steps");
+    m.witness.forEach((id, i) => {
+      if (i > 0) ol.append(el("li", "via", "↓ " + m.links[i - 1]));
+      const li = el("li"); li.append(linkTo(id)); ol.append(li);
+    });
+    box.append(ol);
+  }
+  const callers = current().edges.filter(e => e[1] === selected).map(e => e[0]);
+  const callees = current().edges.filter(e => e[0] === selected && byId(e[1])).map(e => e[1]);
+  for (const [title, ids] of [["Called by", callers], ["Calls", callees]]) {
+    if (!ids.length) continue;
+    box.append(el("h2", null, title));
+    const ul = el("ul", "steps"); for (const id of ids) { const li = el("li"); li.append(linkTo(id)); ul.append(li); }
+    box.append(ul);
+  }
+}
+
+function linkTo(id) {
+  if (!byId(id)) return el("span", null, nameOf(id));
+  const b = el("button", "link", nameOf(id)); b.type = "button"; b.addEventListener("click", () => select(id)); return b;
+}
+
+function renderManifest() {
+  const box = $("manifest"); box.replaceChildren();
+  if (!HAS_DIFF || mode === "base") {
+    box.append(el("h2", null, "Sinks"));
+    const ul = el("ul", "steps");
+    for (const id of current().sinks) { const li = el("li"); li.append(linkTo(id)); ul.append(li); }
+    if (!current().sinks.length) box.append(el("p", "small", "No sinks are declared, so nothing is critical. Add @Critical or a policy file."));
+    box.append(ul);
+    return;
+  }
+  const d = DATA.diff;
+  box.append(el("h2", null, "Review manifest"));
+  if (d.policy.length) {
+    const sec = el("div", "bucket v-ON_PATH"); const t = el("div", "bucket-title"); t.append(el("i", "sw"), document.createTextNode("Policy changes (" + d.policy.length + ")")); sec.append(t);
+    const ul = el("ul", "shape"); d.policy.forEach(s => ul.append(el("li", null, s))); sec.append(ul); box.append(sec);
+  }
+  for (const b of ["MUST", "SHOULD", "SKIP"]) {
+    const items = d.changes.filter(c => c.bucket === b);
+    if (!items.length) continue;
+    const sec = el("div", "bucket v-" + BUCKET_V[b]);
+    const t = el("div", "bucket-title"); t.append(el("i", "sw"), document.createTextNode(BUCKET[b] + " (" + items.length + ")")); sec.append(t);
+    for (const c of items.slice(0, 200)) {
+      const it = el("button", "item"); it.type = "button"; it.append(document.createTextNode(c.name + " "));
+      it.append(el("em", null, c.kind + (c.newDomains.length ? ", new path into " + c.newDomains.join(", ") : "")));
+      if (byId(c.method)) it.addEventListener("click", () => select(c.method)); else it.disabled = true;
+      sec.append(it);
+    }
+    if (items.length > 200) sec.append(el("p", "small", "and " + (items.length - 200) + " more"));
+    box.append(sec);
+  }
+  if (d.shape.length) {
+    const sec = el("div", "bucket"); sec.append(el("div", "bucket-title", "Structure changes (" + d.shape.length + ")"));
+    const ul = el("ul", "shape"); d.shape.forEach(s => ul.append(el("li", null, s))); sec.append(ul); box.append(sec);
+  }
+}
+
+function select(id) { selected = id; if (scope === "relevant" || query) { renderMap(); } paint(); }
+
+function paint() {
+  const m = byId(selected), map = $("map");
+  const chain = m ? m.witness : [];
+  map.classList.toggle("picked", !!m);
+  map.querySelectorAll(".row").forEach(r => {
+    r.classList.toggle("inchain", chain.includes(r.dataset.id) || r.dataset.id === selected);
+    r.classList.toggle("sel", r.dataset.id === selected);
+  });
+  renderDetail();
+  drawArrows();
+}
+
+function drawArrows() {
+  const svg = $("arrows"), map = $("map");
+  if (!svg) return;
+  svg.replaceChildren();
+  const m = byId(selected); if (!m) return;
+  const origin = map.getBoundingClientRect();
+  const rect = id => { const r = map.querySelector('.row[data-id="' + CSS.escape(id) + '"]'); if (!r) return null; const b = r.getBoundingClientRect();
+    return { l: b.left - origin.left, r: b.right - origin.left, y: b.top - origin.top + b.height / 2 }; };
+  const ns = "http://www.w3.org/2000/svg";
+  for (let i = 1; i < m.witness.length; i++) {
+    const a = rect(m.witness[i - 1]), b = rect(m.witness[i]); if (!a || !b) continue;
+    let x1, x2, c1, c2, dir;
+    if (b.l >= a.r) { x1 = a.r; x2 = b.l - 7; c1 = x1 + 28; c2 = x2 - 28; dir = 1; }
+    else if (b.r <= a.l) { x1 = a.l; x2 = b.r + 7; c1 = x1 - 28; c2 = x2 + 28; dir = -1; }
+    else { x1 = a.r; x2 = b.r + 7; c1 = x1 + 30; c2 = x2 + 30; dir = -1; }
+    const p = document.createElementNS(ns, "path");
+    p.setAttribute("d", `M${x1},${a.y} C${c1},${a.y} ${c2},${b.y} ${x2},${b.y}`);
+    if (m.links[i - 1] !== "calls") p.setAttribute("class", "soft");
+    const head = document.createElementNS(ns, "polygon");
+    const tip = x2 + 7 * dir;
+    head.setAttribute("points", `${tip},${b.y} ${x2},${b.y - 4.5} ${x2},${b.y + 4.5}`);
+    svg.append(p, head);
+  }
+}
+
+function setMode(next) {
+  mode = next;
+  $("btn-base").setAttribute("aria-pressed", String(mode === "base"));
+  $("btn-head").setAttribute("aria-pressed", String(mode === "head"));
+  $("btn-relevant").setAttribute("aria-pressed", String(scope === "relevant"));
+  $("btn-all").setAttribute("aria-pressed", String(scope === "all"));
+  renderLegend(); renderMap(); renderManifest(); paint();
+}
+$("versions").hidden = !HAS_DIFF;
+$("lede").textContent = HAS_DIFF
+  ? "Every method coloured by verdict, before and after the change. Click a method to see the proof for its verdict."
+  : "Every method coloured by verdict. Click a method to see the proof for its verdict.";
+$("btn-base").addEventListener("click", () => setMode("base"));
+$("btn-head").addEventListener("click", () => setMode("head"));
+$("btn-relevant").addEventListener("click", () => { scope = "relevant"; setMode(mode); });
+$("btn-all").addEventListener("click", () => { scope = "all"; setMode(mode); });
+$("search").addEventListener("input", e => { query = e.target.value; renderMap(); paint(); });
+window.addEventListener("resize", drawArrows);
+setMode("head");
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawArrows);
+</script>
+
+</body>
+</html>

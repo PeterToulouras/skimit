@@ -1,0 +1,2 @@
+sink EXEC com.xxl.job.core.*ExecutorBiz#run
+sink EXEC com.xxl.job.core.*ExecutorBiz#kill

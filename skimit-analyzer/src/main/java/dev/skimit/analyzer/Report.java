@@ -1,0 +1,181 @@
+package dev.skimit.analyzer;
+
+import dev.skimit.analyzer.Analysis.Position;
+import dev.skimit.analyzer.Analysis.Verdict;
+import dev.skimit.analyzer.Differ.Bucket;
+import dev.skimit.analyzer.Differ.Change;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/** Renders analyses and diffs as Markdown (for people) and JSON (for gates). */
+public final class Report {
+  private Report() {}
+
+  public static String summary(Analysis a, boolean listMethods) {
+    StringBuilder sb = new StringBuilder("# skimit analysis\n\n");
+    sb.append("## Sinks\n\n");
+    if (a.sinks.isEmpty()) sb.append("None declared. Add `@Critical` or a policy file; without sinks nothing is critical.\n");
+    for (Map.Entry<MethodKey, Set<String>> e : a.sinks.entrySet()) {
+      sb.append("- `").append(e.getKey().pretty()).append("` ").append(e.getValue()).append('\n');
+    }
+    Map<Verdict, int[]> totals = a.totals();
+    int methods = totals.values().stream().mapToInt(t -> t[0]).sum();
+    int insns = totals.values().stream().mapToInt(t -> t[1]).sum();
+    sb.append("\n## Methods by verdict\n\n| Verdict | Methods | Share | Share by code size |\n|---|---:|---:|---:|\n");
+    for (Map.Entry<Verdict, int[]> e : totals.entrySet()) {
+      sb.append("| ").append(e.getKey()).append(" | ").append(e.getValue()[0]).append(" | ")
+          .append(pct(e.getValue()[0], methods)).append(" | ").append(pct(e.getValue()[1], insns)).append(" |\n");
+    }
+    sb.append("\n## Classes by position\n\n");
+    for (Position p : Position.values()) {
+      List<String> in = a.positions.entrySet().stream().filter(e -> e.getValue() == p).map(Map.Entry::getKey)
+          .sorted(Comparator.comparing((String c) -> -a.dependents.get(c)).thenComparing(c -> c)).toList();
+      sb.append("- ").append(p).append(": ").append(in.size());
+      if (p != Position.LEAF && !in.isEmpty()) {
+        sb.append(" (").append(in.stream().limit(8)
+            .map(c -> c.substring(c.lastIndexOf('/') + 1) + " " + a.dependents.get(c)).collect(Collectors.joining(", ")));
+        sb.append(in.size() > 8 ? ", ...)" : ")");
+      }
+      sb.append('\n');
+    }
+    if (listMethods) {
+      sb.append("\n## Every method\n\n");
+      for (Map.Entry<MethodKey, Verdict> e : a.verdicts.entrySet()) {
+        sb.append("- ").append(e.getValue()).append(" `").append(e.getKey().pretty()).append('`');
+        String why = a.explain(e.getKey());
+        if (!why.isEmpty()) sb.append(": ").append(why);
+        sb.append('\n');
+      }
+    }
+    return sb.toString();
+  }
+
+  public static String markdown(Differ d) {
+    StringBuilder sb = new StringBuilder("# Review manifest\n\n");
+    sb.append(d.changes.size()).append(" methods changed: **").append(d.count(Bucket.MUST)).append(" must review**, ")
+        .append(d.count(Bucket.SHOULD)).append(" should review, ").append(d.count(Bucket.SKIP)).append(" isolated.\n");
+    if (!d.policy.isEmpty()) {
+      sb.append("\n## Policy changes (always reviewed)\n\n");
+      for (String p : d.policy) sb.append("- ").append(p).append('\n');
+    }
+    section(sb, d, Bucket.MUST, "Must review: on a critical path");
+    if (!d.ripple.isEmpty()) {
+      sb.append("\nBecause of these changes, ").append(d.ripple.size())
+          .append(" untouched method(s) can now reach a sink: ")
+          .append(d.ripple.stream().limit(10).map(m -> "`" + m.pretty() + "`").collect(Collectors.joining(", ")))
+          .append(d.ripple.size() > 10 ? ", ...\n" : "\n");
+    }
+    section(sb, d, Bucket.SHOULD, "Should review: takes part in a critical flow, or cannot be proven clear");
+    if (!d.shape.isEmpty()) {
+      sb.append("\n## Shape changes: review the structure, not the bodies\n\n");
+      for (String s : d.shape) sb.append("- ").append(s).append('\n');
+    }
+    section(sb, d, Bucket.SKIP, "Isolated: nothing connects these to a sink, body review can be skipped");
+    return sb.toString();
+  }
+
+  private static void section(StringBuilder sb, Differ d, Bucket bucket, String title) {
+    List<Change> in = d.changes.stream().filter(c -> c.bucket() == bucket).toList();
+    if (in.isEmpty()) return;
+    sb.append("\n## ").append(title).append("\n\n");
+    for (Change c : in) {
+      sb.append("- `").append(c.method().pretty()).append("` (").append(c.kind()).append(")");
+      if (!c.domains().isEmpty()) sb.append(" ").append(c.domains());
+      if (!c.newDomains().isEmpty()) sb.append(" **NEW PATH into ").append(String.join(", ", c.newDomains())).append("**");
+      if (bucket != Bucket.SKIP) {
+        sb.append("\n  - ").append(c.reason());
+        if (!c.explanation().isEmpty()) sb.append("\n  - ").append(c.explanation());
+      }
+      sb.append('\n');
+    }
+  }
+
+  private static String pct(int part, int whole) {
+    return whole == 0 ? "-" : String.format(Locale.ROOT, "%.1f%%", 100.0 * part / whole);
+  }
+
+  // ---- HTML ---------------------------------------------------------------------------------
+
+  /** One self-contained page: the map of verdicts and, for a diff, the manifest beside it. */
+  public static String html(Analysis base, Analysis head, Differ diff) throws java.io.IOException {
+    String template;
+    try (java.io.InputStream in = Report.class.getResourceAsStream("report.html")) {
+      if (in == null) throw new java.io.IOException("report template missing from the jar");
+      template = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+    String data = "{\"base\":" + (base == null ? "null" : json(base).strip())
+        + ",\"head\":" + json(head).strip()
+        + ",\"diff\":" + (diff == null ? "null" : json(diff).strip()) + "}";
+    return template.replace("__DATA__", data.replace("</", "<\\/"));
+  }
+
+  // ---- JSON -----------------------------------------------------------------------------------
+
+  public static String json(Differ d) {
+    List<String> changes = new ArrayList<>();
+    for (Change c : d.changes) {
+      changes.add("{" + kv("method", c.method().id()) + "," + kv("kind", c.kind()) + "," + kv("bucket", c.bucket().name())
+          + "," + kv("verdict", c.verdict().name()) + ",\"domains\":" + arr(c.domains()) + ",\"newDomains\":" + arr(c.newDomains())
+          + "," + kv("reason", c.reason()) + "," + kv("name", c.method().pretty()) + ",\"witness\":" + arr(c.witness().stream().map(MethodKey::id).toList()) + "}");
+    }
+    return "{\"mustReview\":" + d.count(Bucket.MUST) + ",\"shouldReview\":" + d.count(Bucket.SHOULD)
+        + ",\"isolated\":" + d.count(Bucket.SKIP) + ",\"policy\":" + arr(d.policy) + ",\"shape\":" + arr(d.shape)
+        + ",\"ripple\":" + arr(d.ripple.stream().map(MethodKey::id).toList())
+        + ",\"changes\":[" + String.join(",", changes) + "]}\n";
+  }
+
+  public static String json(Analysis a) {
+    List<String> methods = new ArrayList<>();
+    for (Map.Entry<MethodKey, Verdict> e : a.verdicts.entrySet()) {
+      methods.add("{" + kv("method", e.getKey().id()) + "," + kv("name", e.getKey().pretty())
+          + "," + kv("class", e.getKey().owner().replace('/', '.')) + "," + kv("reason", a.reason(e.getKey()))
+          + ",\"links\":" + arr(a.links(e.getKey())) + "," + kv("verdict", e.getValue().name())
+          + "," + kv("hash", a.hashes.get(e.getKey())) + ",\"domains\":" + arr(a.domains(e.getKey()))
+          + ",\"witness\":" + arr(a.witness(e.getKey()).stream().map(MethodKey::id).toList()) + "}");
+    }
+    List<String> classes = new ArrayList<>();
+    for (Map.Entry<String, Position> e : a.positions.entrySet()) {
+      classes.add("{" + kv("class", e.getKey().replace('/', '.')) + "," + kv("position", e.getValue().name())
+          + ",\"dependents\":" + a.dependents.get(e.getKey()) + "}");
+    }
+    List<String> edges = new ArrayList<>();
+    for (MethodKey from : a.verdicts.keySet()) {
+      for (MethodKey to : a.graph.calleesOf(from)) {
+        edges.add("[" + str(from.id()) + "," + str(to.id()) + "]");
+      }
+    }
+    return "{\"sinks\":" + arr(a.sinks.keySet().stream().map(MethodKey::id).toList())
+        + ",\"edges\":[" + String.join(",", edges) + "]"
+        + ",\"classes\":[" + String.join(",", classes) + "],\"methods\":[" + String.join(",", methods) + "]}\n";
+  }
+
+  private static String kv(String k, String v) {
+    return str(k) + ":" + str(v);
+  }
+
+  private static String arr(Collection<String> items) {
+    return "[" + items.stream().map(Report::str).collect(Collectors.joining(",")) + "]";
+  }
+
+  private static String str(String s) {
+    StringBuilder sb = new StringBuilder("\"");
+    for (char ch : s.toCharArray()) {
+      switch (ch) {
+        case '"' -> sb.append("\\\"");
+        case '\\' -> sb.append("\\\\");
+        case '\n' -> sb.append("\\n");
+        default -> {
+          if (ch < 0x20) sb.append(String.format("\\u%04x", (int) ch));
+          else sb.append(ch);
+        }
+      }
+    }
+    return sb.append('"').toString();
+  }
+}

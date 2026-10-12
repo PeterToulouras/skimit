@@ -1,0 +1,1 @@
+sink MONEY org.broadleafcommerce.common.payment.service.PaymentGatewayTransactionService#*

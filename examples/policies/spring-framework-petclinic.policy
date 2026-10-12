@@ -1,0 +1,2 @@
+sink DATA_WRITE org.springframework.samples.petclinic.repository.*Repository#save*
+sink DATA_WRITE org.springframework.samples.petclinic.repository.*Repository#delete*

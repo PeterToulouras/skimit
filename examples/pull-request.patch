@@ -1,0 +1,68 @@
+diff -ruN a/src/shop/checkout/PriceCalculator.java b/src/shop/checkout/PriceCalculator.java
+--- a/src/shop/checkout/PriceCalculator.java	2026-10-11 13:25:25.048876240 -0700
++++ b/src/shop/checkout/PriceCalculator.java	2026-10-11 13:25:25.053744176 -0700
+@@ -4,6 +4,7 @@
+ 
+ public class PriceCalculator {
+   public long total(Order order) {
+-    return order.unitCents() * order.quantity();
++    long total = order.unitCents() * order.quantity();
++    return order.quantity() >= 10 ? total * 90 / 100 : total;
+   }
+ }
+diff -ruN a/src/shop/reports/CsvExport.java b/src/shop/reports/CsvExport.java
+--- a/src/shop/reports/CsvExport.java	1969-12-31 16:00:00.000000000 -0800
++++ b/src/shop/reports/CsvExport.java	2026-10-11 13:25:25.056483526 -0700
+@@ -0,0 +1,12 @@
++package shop.reports;
++
++import java.util.List;
++import shop.model.Order;
++
++public class CsvExport {
++  public String export(List<Order> orders) {
++    StringBuilder sb = new StringBuilder("customer,quantity\n");
++    for (Order o : orders) sb.append(o.customer()).append(',').append(o.quantity()).append('\n');
++    return sb.toString();
++  }
++}
+diff -ruN a/src/shop/reports/SalesReport.java b/src/shop/reports/SalesReport.java
+--- a/src/shop/reports/SalesReport.java	2026-10-11 13:25:25.048947373 -0700
++++ b/src/shop/reports/SalesReport.java	2026-10-11 13:25:25.055134329 -0700
+@@ -1,15 +1,22 @@
+ package shop.reports;
+ 
+ import java.util.List;
++import shop.billing.Ledger;
+ import shop.model.Order;
+ 
+ public class SalesReport {
+   private final TextTable table = new TextTable();
++  private final Ledger ledger;
++
++  public SalesReport(Ledger ledger) {
++    this.ledger = ledger;
++  }
+ 
+   public String render(List<Order> orders) {
+     StringBuilder sb = new StringBuilder();
+     for (Order o : orders) {
+       sb.append(table.pad(o.customer(), 20)).append(o.quantity()).append('\n');
++      if (o.quantity() >= 100) ledger.post(o.customer(), -500);
+     }
+     return sb.toString();
+   }
+diff -ruN a/src/shop/reports/TextTable.java b/src/shop/reports/TextTable.java
+--- a/src/shop/reports/TextTable.java	2026-10-11 13:25:25.048931760 -0700
++++ b/src/shop/reports/TextTable.java	2026-10-11 13:25:25.052308114 -0700
+@@ -2,8 +2,7 @@
+ 
+ public class TextTable {
+   public String pad(String s, int width) {
+-    StringBuilder sb = new StringBuilder(s);
+-    while (sb.length() < width) sb.append(' ');
+-    return sb.toString();
++    if (s.length() >= width) return s.substring(0, width);
++    return s + " ".repeat(width - s.length());
+   }
+ }

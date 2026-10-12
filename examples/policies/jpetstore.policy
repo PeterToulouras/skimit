@@ -1,0 +1,3 @@
+sink ORDER org.mybatis.jpetstore.mapper.OrderMapper#insert*
+sink ORDER org.mybatis.jpetstore.mapper.LineItemMapper#insert*
+sink ORDER org.mybatis.jpetstore.mapper.ItemMapper#updateInventoryQuantity

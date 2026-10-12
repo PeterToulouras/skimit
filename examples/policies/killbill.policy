@@ -1,0 +1,6 @@
+sink MONEY org.killbill.billing.payment.plugin.api.PaymentPluginApi#authorizePayment
+sink MONEY org.killbill.billing.payment.plugin.api.PaymentPluginApi#capturePayment
+sink MONEY org.killbill.billing.payment.plugin.api.PaymentPluginApi#purchasePayment
+sink MONEY org.killbill.billing.payment.plugin.api.PaymentPluginApi#voidPayment
+sink MONEY org.killbill.billing.payment.plugin.api.PaymentPluginApi#creditPayment
+sink MONEY org.killbill.billing.payment.plugin.api.PaymentPluginApi#refundPayment
