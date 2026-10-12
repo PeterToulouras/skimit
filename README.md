@@ -19,7 +19,7 @@ analysis missed, after finding and fixing twenty-three such misses on the way
 ([How the verdicts are checked](#how-the-verdicts-are-checked)). What is still outside the model
 is listed under [Known gaps](#known-gaps).
 
-![The HTML report for the example pull request: each method coloured by verdict, with an arrow from a report method to the ledger sink](docs/walkthrough.png)
+![A one-line change to a report class is flagged as a new path into the ledger, with the call chain as proof](docs/demo.gif)
 
 ## What you get
 
@@ -60,22 +60,19 @@ report class. In the graph it is a report that has started moving money.
 
 ## Try it
 
-Needs JDK 17 or newer and Maven.
-
-```
-mvn package
-./examples/demo.sh
-```
+Download `skimit.jar` from the [latest release](https://github.com/PeterToulouras/skimit/releases/latest)
+(Java 17 or newer), or build it: `mvn package` puts it in `skimit-analyzer/target`, and
+`./examples/demo.sh` then runs the whole thing on the example app.
 
 On your own code:
 
 ```
 # what is critical, and how much of the codebase is connected to it
-java -jar skimit-analyzer/target/skimit.jar analyze path/to/classes --list
+java -jar skimit.jar analyze path/to/classes --list
 
 # what a change needs: build the base and the head, then compare them
-java -jar skimit-analyzer/target/skimit.jar diff \
-    --base base/target/classes --head head/target/classes --json manifest.json --exit-code
+java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
+    --json manifest.json --exit-code
 ```
 
 Add `--html report.html` to either command for the interactive map shown above: every method
