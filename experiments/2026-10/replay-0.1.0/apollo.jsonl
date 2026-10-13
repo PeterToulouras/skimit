@@ -1,0 +1,77 @@
+{"sha": "42d4d827ebb95189c99e2ca85baffcd8594784ef", "date": "2026-10-11", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "190b96e6fa3abad9cdff2972e7cb0f721f879ee0", "date": "2026-10-11", "must": 1, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "ce54e20b5263d6b157bafcb9d7d816fcc11f146e", "date": "2026-10-01", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 2}
+{"sha": "5d0755e1e2b5dee39d045b8ee4f15fb822daf94e", "date": "2026-09-30", "must": 0, "should": 2, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "2accfc08d7f2dd74a58ac8811e28e3f38d2a18a2", "date": "2026-09-27", "must": 13, "should": 12, "isolated": 10, "policy": 0, "shape": 0}
+{"sha": "0edf58e5d323d1df248c9f8b988d63dd5fc6e877", "date": "2026-09-20", "must": 0, "should": 13, "isolated": 8, "policy": 0, "shape": 6}
+{"sha": "39b8d491bdf4a3f2e8a9c3ebf689d693777b3923", "date": "2026-09-06", "must": 0, "should": 2, "isolated": 47, "policy": 0, "shape": 13}
+{"sha": "5d438a23f5b6604245b5f7a6b09a31781a3fdc34", "date": "2026-08-31", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "6ca0319decfacf886403d1eb4122ae29a0476003", "date": "2026-08-30", "must": 1, "should": 1, "isolated": 4, "policy": 0, "shape": 0}
+{"sha": "b124f902da3765c141f9c348441afe0c4bf90394", "date": "2026-08-30", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 0}
+{"sha": "c01018384f253bf48c870a9d397deb9d7824c683", "date": "2026-08-30", "must": 2, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "b4ab0ea9fb6556a8c107705f84677cc28db8f41d", "date": "2026-08-22", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 0}
+{"sha": "bcaba0081b141cb066ba263d35a44377de089bd1", "date": "2026-08-22", "must": 3, "should": 6, "isolated": 4, "policy": 0, "shape": 7}
+{"sha": "bfc4e89e8071152fb25dce366ff4a285ef1786ea", "date": "2026-08-20", "must": 2, "should": 7, "isolated": 0, "policy": 0, "shape": 4}
+{"sha": "d95fc18d112589efc09ddcbe1507047584d55251", "date": "2026-08-02", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 1}
+{"sha": "a99e636d31e91191900e3d14b87204ccbd711d05", "date": "2026-08-01", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 1}
+{"sha": "cdaedad3cd85989e37c717e81ed050f46c6a8bcc", "date": "2026-07-19", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 0}
+{"sha": "984ba07984b86ced6eb7af4cefd3fc816c7cf6e6", "date": "2026-07-16", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 0}
+{"sha": "a47a122fba2434ce9de71a6727fe0695c0006476", "date": "2026-07-13", "must": 2, "should": 1, "isolated": 0, "policy": 4, "shape": 3}
+{"sha": "d7cd9e7389648edd4dfe8a891a146f1d8c981f39", "date": "2026-07-12", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 1}
+{"sha": "6b30c2c133b3c4eb63a0d5fb6ebaffd62a5208a2", "date": "2026-07-04", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "09b8254afef21ab9c24325ef13324e98dcf45647", "date": "2026-06-27", "must": 1, "should": 2, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "0d483cada192c15f3106cc7f4530e6523ea138b6", "date": "2026-06-27", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "eec988382e4c90bbdaea7a9aacf3d2e8d0bb07a0", "date": "2026-06-27", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "735a70c75cf7b14d6b4ab3bc550912cb05e9f6bc", "date": "2026-06-17", "must": 33, "should": 541, "isolated": 342, "policy": 4, "shape": 99}
+{"sha": "998b88f100d5ba8dd4af16a0eb1d008b513cca70", "date": "2026-06-07", "must": 13, "should": 30, "isolated": 29, "policy": 0, "shape": 19}
+{"sha": "07871524ce91809c466778a27187c131201879ff", "date": "2026-06-06", "must": 24, "should": 131, "isolated": 178, "policy": 0, "shape": 79}
+{"sha": "0c919ab8595095e8f82530a6eec03a55f29223b8", "date": "2026-05-30", "must": 0, "should": 0, "isolated": 9, "policy": 0, "shape": 1}
+{"sha": "658e1a9bba99ea9479491dc4c89d184d50de0a20", "date": "2026-05-24", "must": 30, "should": 28, "isolated": 33, "policy": 0, "shape": 43}
+{"sha": "9b00413870659d0809635b03a83d1c035f92ff86", "date": "2026-05-24", "must": 0, "should": 29, "isolated": 52, "policy": 0, "shape": 83}
+{"sha": "32e959eccc82bd2dc9d58dfa9305e5151989f465", "date": "2026-05-24", "must": 7, "should": 41, "isolated": 21, "policy": 0, "shape": 55}
+{"sha": "517c5b4f61b80518cb077344d89624ac58bae702", "date": "2026-05-23", "must": 3, "should": 36, "isolated": 31, "policy": 0, "shape": 66}
+{"sha": "eaf86be6c52290879de33a2e85ead44ddd9f4f4a", "date": "2026-05-16", "must": 91, "should": 484, "isolated": 414, "policy": 0, "shape": 281}
+{"sha": "177a9dc7b825b88715e378b9269dc2f9b4701df0", "date": "2026-05-10", "must": 0, "should": 7, "isolated": 1, "policy": 0, "shape": 7}
+{"sha": "083f2b36e73220d1187e8bbba6328468303fa644", "date": "2026-05-10", "must": 5, "should": 2, "isolated": 3, "policy": 0, "shape": 11}
+{"sha": "7daf306475d9f6f1e71a28713d519efff8b06972", "date": "2026-04-18", "must": 2, "should": 6, "isolated": 1, "policy": 0, "shape": 9}
+{"sha": "36587732f37292a3cf27b2a3f64cbcad9d6f11df", "date": "2026-03-28", "must": 0, "should": 326, "isolated": 195, "policy": 0, "shape": 5}
+{"sha": "56e482183bbf55c67676403f990dd5dbef15c128", "date": "2026-03-28", "must": 0, "should": 21, "isolated": 0, "policy": 0, "shape": 2}
+{"sha": "0bb7adeb5e96e14da14e00f3db251fb0e2aa870d", "date": "2026-02-22", "must": 118, "should": 345, "isolated": 386, "policy": 10, "shape": 17}
+{"sha": "dae91b599ff5f046d15fb09d0999bd3aba628ee2", "date": "2026-02-21", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "5c930f9b4945e44cc7214af8564edc91c0219306", "date": "2026-02-15", "must": 5, "should": 2, "isolated": 8, "policy": 0, "shape": 3}
+{"sha": "e8384a520582e832f681316fcb3b93dc6be4ea36", "date": "2026-02-01", "must": 0, "should": 0, "isolated": 13, "policy": 0, "shape": 2}
+{"sha": "ab71dc89c35672eb4c10fc91ebdb18c695a00897", "date": "2026-01-01", "must": 2, "should": 19, "isolated": 23, "policy": 0, "shape": 0}
+{"sha": "a860f45eecf75626d8491d388528bdf653f322e1", "date": "2025-12-27", "must": 0, "should": 0, "isolated": 2, "policy": 0, "shape": 3}
+{"sha": "9de9a1580f5eb3d9bfa7a2b95b95c693bf2032a4", "date": "2025-12-14", "must": 6, "should": 3, "isolated": 12, "policy": 0, "shape": 11}
+{"sha": "00503d0a27305815b4112a0b89e2f271336d2071", "date": "2025-12-07", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "941ac22db1d469bbd5c56e438cdff6f2c4c1e9f8", "date": "2025-12-07", "must": 1, "should": 2, "isolated": 0, "policy": 0, "shape": 4}
+{"sha": "55fdcbb576eccfacb536b7ca5892d583ce2665e4", "date": "2025-12-01", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "840d919de2922ecc6836c3860f2eba844e76923d", "date": "2025-11-16", "skipped": "did not build"}
+{"sha": "d683dad85fbdd15700e1fb8209af61bf961c00f7", "date": "2025-11-06", "skipped": "did not build"}
+{"sha": "3086b574881298a03a4faade8ab11b01ca863ef1", "date": "2025-11-02", "skipped": "did not build"}
+{"sha": "55c722786059c3f53c249a64815da30b321f30dd", "date": "2025-10-29", "skipped": "did not build"}
+{"sha": "8dfe8229a224170b52555a3d4d325fdd479fe9dd", "date": "2025-10-29", "skipped": "did not build"}
+{"sha": "c10eba5217bbcc1d35348ed35c0e041e025b1116", "date": "2025-10-26", "skipped": "did not build"}
+{"sha": "aba9a2869397c60ff61bf017d67caed3896a6061", "date": "2025-10-19", "skipped": "did not build"}
+{"sha": "b12ef9a6be0aad152cca6c720f9fd7646e39e8c4", "date": "2025-10-12", "skipped": "did not build"}
+{"sha": "8c646fee3fcd48e08c2fbef387883f9bba6538a3", "date": "2025-10-03", "skipped": "did not build"}
+{"sha": "4fa881a973996edf978c9b8e78719b437b64169c", "date": "2025-08-09", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "b183c44343c35fc341a59c5f98679dc0c701a922", "date": "2025-08-09", "must": 0, "should": 1, "isolated": 25, "policy": 0, "shape": 16}
+{"sha": "98df5e674375a6c4bf7eb77b3e01515a6dba8880", "date": "2025-07-15", "must": 0, "should": 2, "isolated": 1, "policy": 0, "shape": 2}
+{"sha": "7f699668c684a07330ed49fd8f497d3169a8aba1", "date": "2025-06-16", "must": 2, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "17084eae13a9b592cf5a863bd49ae7f7fefcc7ce", "date": "2025-06-12", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "f4dc94e78f08098ce5f314dbb0736546c7f827ba", "date": "2025-06-10", "must": 0, "should": 3, "isolated": 1, "policy": 0, "shape": 7}
+{"sha": "42b6d98ca87546429f9e5a8ba4b6ede121a60eb9", "date": "2025-06-08", "must": 0, "should": 0, "isolated": 2, "policy": 0, "shape": 2}
+{"sha": "fc4c81c6c9881209b6510f838b41c6b64a3a3b24", "date": "2025-04-25", "must": 0, "should": 2, "isolated": 2, "policy": 0, "shape": 4}
+{"sha": "362735ded4f13b62f6ab9df135d7096066e8e291", "date": "2025-04-11", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "e16a1ef10e3321d920455f6fff2b6313db973d79", "date": "2025-04-04", "must": 0, "should": 2, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "7dc1847455079e440c64cc41fdbebeeed1e2b810", "date": "2025-04-01", "must": 0, "should": 2, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "7380bde0ae92ece678649be45db048f359cae944", "date": "2025-03-30", "must": 0, "should": 5, "isolated": 1, "policy": 0, "shape": 6}
+{"sha": "9f91c02ffb008bdaff607f1f58947f3e0ef13e99", "date": "2025-03-29", "must": 0, "should": 11, "isolated": 0, "policy": 0, "shape": 8}
+{"sha": "5eb320f7fdf0c183904e9aff501392c878fec62f", "date": "2025-02-18", "must": 34, "should": 29, "isolated": 117, "policy": 0, "shape": 82}
+{"sha": "cf2ed788388c9e6fcc3265b884f767c15ef3c003", "date": "2025-02-16", "must": 0, "should": 0, "isolated": 9, "policy": 0, "shape": 1}
+{"sha": "a070aa11b81b84bc500a575bc41937c3522fea1e", "date": "2025-02-07", "must": 0, "should": 1, "isolated": 6, "policy": 0, "shape": 2}
+{"sha": "ba197ed36b340de582f7c46f6a0cfb975e592a9c", "date": "2025-01-26", "must": 0, "should": 4, "isolated": 2, "policy": 0, "shape": 3}
+{"sha": "8acf07510c1efa41a1ccd01abbaef39725d2f1b5", "date": "2025-01-18", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "34a2c11e927e736bb76373782ff34c140478ba78", "date": "2025-01-18", "must": 9, "should": 21, "isolated": 39, "policy": 0, "shape": 30}
+{"sha": "939f890b1c37ce645e2d441781b495dc437e6306", "date": "2024-12-14", "must": 1, "should": 4, "isolated": 8, "policy": 0, "shape": 0}

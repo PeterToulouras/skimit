@@ -6,150 +6,270 @@
 <title>skimit report</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: a map of classes on the left (methods as rows), a reading panel on the right; proof arrows drawn over the map. */
+/* Layout: the answer first (what to review, as a list with reasons), the proof for the selected
+   method beside it, and the map of every class underneath for context. */
 :root {
-  --bg: #f3f5f8; --surface: #ffffff; --sunken: #e9edf2; --fg: #18202c; --muted: #5a6577; --line: #d5dbe4;
-  --select: #1d4fd7;
+  --bg: #f3f5f8; --surface: #ffffff; --sunken: #e9edf2; --fg: #18202c; --muted: #4d5868; --line: #d5dbe4;
+  --select: #1d4fd7; --select-bg: #e8eefc;
   --path: #d03b3b; --infl: #e09400; --unpr: #6250d6; --iso: #12a06e;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #12161d; --surface: #1a202a; --sunken: #232a36; --fg: #e6eaf1; --muted: #9aa5b8; --line: #323b4a;
-  --select: #7ea2ff; --path: #d03b3b; --infl: #c98500; --unpr: #9085e9; --iso: #199e70; color-scheme: dark } }
+  --bg: #12161d; --surface: #1a202a; --sunken: #232a36; --fg: #e6eaf1; --muted: #a9b3c4; --line: #323b4a;
+  --select: #7ea2ff; --select-bg: #1f2a44; --path: #e0504c; --infl: #c98500; --unpr: #9085e9; --iso: #199e70; color-scheme: dark } }
 :root[data-theme="dark"] {
-  --bg: #12161d; --surface: #1a202a; --sunken: #232a36; --fg: #e6eaf1; --muted: #9aa5b8; --line: #323b4a;
-  --select: #7ea2ff; --path: #d03b3b; --infl: #c98500; --unpr: #9085e9; --iso: #199e70; color-scheme: dark }
+  --bg: #12161d; --surface: #1a202a; --sunken: #232a36; --fg: #e6eaf1; --muted: #a9b3c4; --line: #323b4a;
+  --select: #7ea2ff; --select-bg: #1f2a44; --path: #e0504c; --infl: #c98500; --unpr: #9085e9; --iso: #199e70; color-scheme: dark }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
-.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 22px; }
-h1 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
-p { margin: 0; }
-.lede { color: var(--muted); max-width: 68ch; }
-code, .mono { font-family: var(--mono); font-size: 0.9em; }
-header { display: flex; flex-direction: column; gap: 8px; }
-.bar { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1200px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 32px; }
+p, h1, h2, h3, ul, ol { margin: 0; }
+button { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--select); outline-offset: 2px; }
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+.sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: none; display: inline-block; }
+.v-ON_PATH { --c: var(--path); } .v-INFLUENCES { --c: var(--infl); } .v-UNPROVEN { --c: var(--unpr); } .v-ISOLATED { --c: var(--iso); }
+
+/* Header: brand, then the answer. */
+.top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 600; font-size: 17px; }
+.brand rect { fill: var(--fg); } .brand rect.hit { fill: var(--path); } .brand rect.dim { opacity: .28; }
+.answer { display: flex; flex-direction: column; gap: 10px; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); line-height: 1.15; font-weight: 600; letter-spacing: -0.015em; text-wrap: balance; }
+.sub { font-size: 18px; color: var(--muted); max-width: 64ch; }
+.strip { display: flex; gap: 3px; height: 10px; max-width: 560px; margin-top: 6px; }
+.strip i { background: var(--c); border-radius: 3px; min-width: 6px; }
+
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
-.seg button { font: inherit; font-weight: 500; color: var(--muted); background: none; border: 0; padding: 7px 14px; cursor: pointer; }
+.seg button { font-size: 14px; font-weight: 500; color: var(--muted); background: none; border: 0; padding: 7px 14px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+
+/* Review list and proof, side by side. */
+.work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .work { grid-template-columns: minmax(0, 1fr); } }
+.list { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.group { display: flex; flex-direction: column; gap: 8px; }
+h2 { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+h2 .n { color: var(--muted); font-weight: 400; }
+.hint { font-size: 14px; color: var(--muted); margin-top: -4px; }
+.items { display: flex; flex-direction: column; gap: 6px; }
+.item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; cursor: pointer; background: var(--surface);
+  border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.item:hover { border-color: var(--c); }
+.item[aria-current="true"] { background: var(--select-bg); border-color: var(--select); border-left-color: var(--c); }
+.item .nm { font-family: var(--mono); font-size: 14.5px; font-weight: 500; overflow-wrap: anywhere; }
+.item .why { font-size: 14px; color: var(--muted); }
+.item .new { font-size: 14px; font-weight: 600; color: var(--path); }
+.kind { font-family: var(--sans); font-size: 12.5px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin-left: 8px; white-space: nowrap; }
+.plain { padding-left: 20px; font-size: 15px; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+details.group > summary { cursor: pointer; list-style: none; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary h2::after { content: "Show"; font-size: 13px; font-weight: 500; color: var(--select); margin-left: 6px; }
+details.group[open] > summary h2::after { content: "Hide"; }
+
+.proof { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; max-height: calc(100vh - 32px); overflow-y: auto; }
+@media (max-width: 860px) { .proof { position: static; max-height: none; } }
+.proof .name { font-family: var(--mono); font-weight: 600; font-size: 18px; line-height: 1.3; overflow-wrap: anywhere; }
+.verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.verdict .dom { font-weight: 400; color: var(--muted); }
+h3 { font-size: 14px; font-weight: 600; color: var(--muted); }
+.chain { list-style: none; padding: 0; display: flex; flex-direction: column; }
+.chain li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 10px; align-items: start; }
+.chain .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--fg); background: var(--surface); margin: 6px 3px 0; }
+.chain .dot.end { background: var(--path); border-color: var(--path); border-radius: 3px; }
+.chain .rail { width: 2px; background: var(--line); justify-self: center; height: 100%; min-height: 26px; }
+.chain .via { font-size: 13.5px; color: var(--muted); padding: 2px 0 4px; }
+.chain .step { font-family: var(--mono); font-size: 14.5px; padding-bottom: 2px; }
+.link { font-family: var(--mono); font-size: 14px; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline;
+  text-decoration-color: var(--line); text-underline-offset: 3px; overflow-wrap: anywhere; }
+.link:hover { text-decoration-color: var(--fg); }
+.chain .step .link { font-size: 14.5px; }
+.sinktag { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: #fff; background: var(--path); border-radius: 4px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
+.refs { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 20px; }
+.cols > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+/* The map. */
+.mapsec { display: flex; flex-direction: column; gap: 16px; }
+.bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend b { color: var(--fg); font-variant-numeric: tabular-nums; }
-.sw { width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: none; }
-.v-ON_PATH { --c: var(--path); } .v-INFLUENCES { --c: var(--infl); } .v-UNPROVEN { --c: var(--unpr); } .v-ISOLATED { --c: var(--iso); }
-main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
-@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
-.map { position: relative; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.search { font: inherit; font-size: 14px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 240px; max-width: 100%; }
+.map { position: relative; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .map svg path { fill: none; stroke: var(--select); stroke-width: 2; }
 .map svg path.soft { stroke-dasharray: 5 4; }
 .map svg polygon { fill: var(--select); }
 .pkg { display: flex; flex-direction: column; gap: 8px; }
-.pkg-name { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.classes { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px 34px; align-items: start; }
+.pkg-name { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.classes { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px 36px; align-items: start; }
 .cls { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
-.cls-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 10px 6px; }
-.cls-head strong { font-weight: 600; overflow-wrap: anywhere; }
-.pos { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
-.rows { display: flex; flex-direction: column; padding: 0 4px 4px; gap: 2px; }
-.row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font-family: var(--mono); font-size: 12.5px; color: var(--fg);
-  background: color-mix(in srgb, var(--c) 9%, transparent); border: 1px solid transparent; border-radius: 4px; padding: 5px 6px; cursor: pointer; min-width: 0; }
-.row:hover { border-color: var(--c); }
-.row:focus-visible, .seg button:focus-visible, .item:focus-visible, .link:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
+.cls-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 9px 12px 5px; }
+.cls-head strong { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.pos { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.rows { display: flex; flex-direction: column; padding: 0 5px 6px; }
+.row { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; font-family: var(--mono); font-size: 13.5px;
+  background: none; border: 1px solid transparent; border-radius: 4px; padding: 4px 7px; cursor: pointer; min-width: 0; }
+.row:hover { background: var(--sunken); }
 .row .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.tag { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
-.tag.sink { background: var(--path); color: var(--surface); }
-.tag.chg { border: 1px solid var(--fg); color: var(--fg); }
-.map.picked .row:not(.inchain) { opacity: 0.38; }
-.row.inchain { border-color: var(--select); background: color-mix(in srgb, var(--select) 12%, var(--surface)); }
+.row.changed .nm { font-weight: 600; }
+.row .t { font-family: var(--sans); font-size: 12px; font-weight: 500; border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.row .t.sink { background: var(--path); color: #fff; font-weight: 600; border-radius: 4px; }
+.row .t.chg { border: 1px solid var(--muted); color: var(--fg); }
+.row.inchain { background: var(--select-bg); border-color: var(--select); }
 .row.sel { box-shadow: 0 0 0 2px var(--select); }
-aside { display: flex; flex-direction: column; gap: 22px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); min-width: 0; }
-@media (max-width: 900px) { aside { position: static; } }
-.panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.detail { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.detail .name { font-family: var(--mono); font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
-.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--c); }
-.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); font-size: 12.5px; }
-.steps .via { color: var(--muted); font-family: var(--sans); font-size: 12px; padding-left: 14px; }
-.link { font: inherit; color: var(--fg); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; overflow-wrap: anywhere; }
-.small { font-size: 13px; color: var(--muted); }
-.bucket { display: flex; flex-direction: column; gap: 4px; }
-.bucket-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.item { display: block; width: 100%; text-align: left; font-family: var(--mono); font-size: 12.5px; color: var(--fg); background: none; border: 0; border-radius: 4px; padding: 3px 6px 3px 16px; cursor: pointer; overflow-wrap: anywhere; }
-.item:hover { background: var(--sunken); }
-.item em { font-family: var(--sans); font-style: normal; color: var(--muted); font-size: 12px; }
-.shape { margin: 0; padding-left: 18px; font-size: 13px; color: var(--fg); display: flex; flex-direction: column; gap: 2px; }
-pre.diff { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.55; overflow-x: auto; }
-pre.diff .add { color: var(--iso); font-weight: 600; }
-.search { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; width: 220px; max-width: 100%; }
-.search:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
-.note { font-size: 13px; color: var(--muted); }
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand svg { flex: none; }
-.brand rect { fill: var(--fg); } .brand rect.hit { fill: var(--path); } .brand rect.dim { opacity: .28; }
+.note { font-size: 14px; color: var(--muted); }
 </style>
-
 </head>
-<body style="margin:0">
+<body>
 <div class="wrap">
-  <header>
+  <div class="top">
     <div class="brand">
-      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect class="dim" x="4" y="5" width="20" height="4" rx="2"/><rect class="dim" x="4" y="11" width="14" height="4" rx="2"/><rect class="hit" x="4" y="17" width="24" height="4" rx="2"/><rect class="dim" x="4" y="23" width="16" height="4" rx="2"/></svg>
-      <h1 id="title">skimit report</h1>
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect class="dim" x="4" y="5" width="20" height="4" rx="2"/><rect class="dim" x="4" y="11" width="14" height="4" rx="2"/><rect class="hit" x="4" y="17" width="24" height="4" rx="2"/><rect class="dim" x="4" y="23" width="16" height="4" rx="2"/></svg>
+      skimit
     </div>
-    <p class="lede" id="lede"></p>
-  </header>
-
-  <div class="bar">
-    <div class="seg" role="group" aria-label="Version" id="versions">
-      <button id="btn-base" type="button" aria-pressed="false">Before</button>
+    <div class="seg" role="group" aria-label="Version shown" id="versions">
+      <button id="btn-base" type="button" aria-pressed="false">Before the change</button>
       <button id="btn-head" type="button" aria-pressed="true">After</button>
     </div>
-    <div class="seg" role="group" aria-label="Scope" id="scopes">
-      <button id="btn-relevant" type="button" aria-pressed="false">Relevant classes</button>
-      <button id="btn-all" type="button" aria-pressed="true">All classes</button>
-    </div>
-    <input class="search" id="search" type="search" placeholder="Filter by class or method" aria-label="Filter by class or method">
-    <div class="legend" id="legend"></div>
   </div>
 
-  <main>
+  <header class="answer">
+    <h1 id="headline"></h1>
+    <p class="sub" id="sub"></p>
+    <div class="strip" id="strip" aria-hidden="true"></div>
+  </header>
+
+  <div class="work">
+    <section class="list" id="list" aria-label="What to review"></section>
+    <section class="proof" id="proof" aria-live="polite" aria-label="Selected method"></section>
+  </div>
+
+  <section class="mapsec" aria-label="Code map">
+    <h2>Code map <span class="n" id="mapcount"></span></h2>
+    <div class="bar">
+      <div class="seg" role="group" aria-label="Classes shown" id="scopes">
+        <button id="btn-relevant" type="button" aria-pressed="false">Relevant classes</button>
+        <button id="btn-all" type="button" aria-pressed="true">All classes</button>
+      </div>
+      <input class="search" id="search" type="search" placeholder="Filter by class or method" aria-label="Filter by class or method">
+      <div class="legend" id="legend"></div>
+    </div>
     <div class="map" id="map"></div>
-    <aside>
-      <section class="panel">
-        <h2>Selected method</h2>
-        <div class="detail" id="detail"></div>
-      </section>
-      <section class="panel" id="manifest"></section>
-    </aside>
-  </main>
+  </section>
 </div>
 
 <script>
 const DATA = __DATA__;
 const LABEL = { ON_PATH: "On path", INFLUENCES: "Influences", UNPROVEN: "Unproven", ISOLATED: "Isolated" };
-const BUCKET = { MUST: "Must review", SHOULD: "Should review", SKIP: "Skip the body" };
-const BUCKET_V = { MUST: "ON_PATH", SHOULD: "INFLUENCES", SKIP: "ISOLATED" };
+const BUCKETS = [
+  ["MUST", "Must review", "ON_PATH", "These can reach something critical. Read them line by line."],
+  ["SHOULD", "Should review", "INFLUENCES", "These take part in a critical flow, or cannot be proven clear."],
+  ["SKIP", "Isolated", "ISOLATED", "Nothing connects these to a sink. The body can be skimmed."],
+];
 const HAS_DIFF = !!DATA.diff;
 let mode = "head";
 let scope = DATA.head.methods.length > 300 ? "relevant" : "all";
 let query = "";
 let selected = null;
-if (HAS_DIFF) { const first = DATA.diff.changes.find(c => c.bucket === "MUST" && c.kind !== "removed") || DATA.diff.changes.find(c => c.kind !== "removed"); if (first) selected = first.method; }
-if (!selected) { const m = DATA.head.methods.find(x => x.verdict === "ON_PATH" && x.witness.length > 1); if (m) selected = m.method; }
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const short = name => name.slice(name.indexOf(".") + 1);
+const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 
 function current() { return DATA[mode] || DATA.head; }
-function byId(id) { return current().methods.find(m => m.method === id); }
+function byId(id, m) { return (DATA[m || mode] || DATA.head).methods.find(x => x.method === id); }
 function nameOf(id) {
   const m = byId(id);
   if (m) return m.name;
   const cls = id.slice(0, id.indexOf("#")).split(".").pop();
   return cls + "." + id.slice(id.indexOf("#") + 1, id.indexOf("("));
+}
+function sentence(reason) {
+  const gone = "before removal, ";
+  return (reason.startsWith(gone) ? "Before it was removed, it " + reason.slice(gone.length) : "It " + reason) + ".";
+}
+
+function renderAnswer() {
+  const strip = $("strip"); strip.replaceChildren();
+  if (!HAS_DIFF) {
+    const ms = DATA.head.methods, n = v => ms.filter(m => m.verdict === v).length;
+    $("headline").textContent = plural(n("ON_PATH"), "method", "methods") + " can reach something critical";
+    $("sub").textContent = "Of " + plural(ms.length, "method", "methods") + ": " + n("INFLUENCES") + " take part in a critical flow, "
+      + n("UNPROVEN") + " cannot be proven clear, and " + n("ISOLATED") + " are isolated. Select a method to see why.";
+    for (const v of Object.keys(LABEL)) if (n(v)) { const i = el("i", "v-" + v); i.style.flex = n(v); strip.append(i); }
+    return;
+  }
+  const d = DATA.diff, total = d.changes.length;
+  if (!total && !d.policy.length) {
+    $("headline").textContent = "Nothing to review";
+    $("sub").textContent = "No method in the compiled code changed. Comments, formatting and renamed locals leave no trace here.";
+    return;
+  }
+  $("headline").textContent = d.mustReview ? plural(d.mustReview, "method", "methods") + " must be reviewed"
+    : d.policy.length ? "The definition of critical changed"
+    : d.shouldReview ? "Nothing on a critical path changed" : "Every change is isolated";
+  const parts = [];
+  if (d.mustReview && d.shouldReview) parts.push(d.shouldReview + " more should be reviewed");
+  if (!d.mustReview && d.shouldReview) parts.push(plural(d.shouldReview, "method", "methods") + " should be reviewed");
+  if (d.isolated) parts.push(d.isolated + (d.isolated === 1 ? " is isolated and can be skimmed" : " are isolated and can be skimmed"));
+  $("sub").textContent = plural(total, "method", "methods") + " changed" + (parts.length ? ". " + parts.join(", ") + "." : ".");
+  for (const [b, , v] of BUCKETS) { const n = d.changes.filter(c => c.bucket === b).length; if (n) { const i = el("i", "v-" + v); i.style.flex = n; strip.append(i); } }
+}
+
+function renderList() {
+  const box = $("list"); box.replaceChildren();
+  if (!HAS_DIFF) {
+    const g = el("div", "group v-ON_PATH"), h = el("h2"); h.append(el("i", "sw"), document.createTextNode("Sinks "), el("span", "n", String(DATA.head.sinks.length)));
+    g.append(h, el("p", "hint", "What you declared critical. Everything else is judged by its connection to these."));
+    const items = el("div", "items");
+    for (const id of DATA.head.sinks) { const m = byId(id, "head"); if (m) items.append(itemFor(id, m.name, null, m.domains.join(", "), null, "ON_PATH")); }
+    if (!DATA.head.sinks.length) g.append(el("p", "note", "No sinks are declared, so nothing is critical. Add @Critical to a method or pass a policy file."));
+    g.append(items); box.append(g);
+    return;
+  }
+  const d = DATA.diff;
+  if (d.policy.length) {
+    const g = el("div", "group v-ON_PATH"), h = el("h2"); h.append(el("i", "sw"), document.createTextNode("Policy changes "), el("span", "n", String(d.policy.length)));
+    const ul = el("ul", "plain"); d.policy.forEach(s => ul.append(el("li", null, s)));
+    g.append(h, el("p", "hint", "What counts as critical was edited. Review this first."), ul); box.append(g);
+  }
+  for (const [b, title, v, hint] of BUCKETS) {
+    const changes = d.changes.filter(c => c.bucket === b);
+    if (!changes.length) continue;
+    const collapsed = b === "SKIP" && changes.length > 8;
+    const g = el(collapsed ? "details" : "div", "group v-" + v);
+    const h = el("h2"); h.append(el("i", "sw"), document.createTextNode(title + " "), el("span", "n", String(changes.length)));
+    if (collapsed) { const s = el("summary"); s.append(h); g.append(s); } else g.append(h);
+    g.append(el("p", "hint", hint));
+    const items = el("div", "items");
+    for (const c of changes.slice(0, 200)) {
+      items.append(itemFor(c.method, c.name, c.kind, sentence(c.reason), c.newDomains.length ? "New path into " + c.newDomains.join(", ") : null, c.verdict));
+    }
+    g.append(items);
+    if (changes.length > 200) g.append(el("p", "note", "and " + (changes.length - 200) + " more"));
+    box.append(g);
+  }
+  if (d.shape.length) {
+    const g = el("div", "group"), h = el("h2"); h.append(document.createTextNode("Structure changes "), el("span", "n", String(d.shape.length)));
+    const ul = el("ul", "plain"); d.shape.forEach(s => ul.append(el("li", null, s)));
+    g.append(h, el("p", "hint", "Review the design, not the bodies."), ul); box.append(g);
+  }
+}
+
+function itemFor(id, name, kind, why, fresh, verdict) {
+  const it = el("button", "item v-" + verdict); it.type = "button"; it.dataset.id = id;
+  const nm = el("span", "nm", name); if (kind) nm.append(el("span", "kind", kind));
+  it.append(nm);
+  if (fresh) it.append(el("span", "new", fresh));
+  if (why) it.append(el("span", "why", why));
+  it.addEventListener("click", () => select(id, true));
+  return it;
 }
 
 function renderLegend() {
@@ -164,13 +284,13 @@ function renderLegend() {
 function renderMap() {
   const map = $("map"); map.replaceChildren();
   const d = current();
-  const changes = HAS_DIFF && mode === "head" ? Object.fromEntries(DATA.diff.changes.map(c => [c.method, c])) : {};
+  const changes = HAS_DIFF ? Object.fromEntries(DATA.diff.changes.map(c => [c.method, c])) : {};
   const pos = Object.fromEntries(d.classes.map(c => [c.class, c]));
   const relevant = new Set();
   if (scope === "relevant") {
     const keep = id => { const m = byId(id); if (m) relevant.add(m.class); };
     d.sinks.forEach(keep);
-    if (HAS_DIFF && mode === "head") DATA.diff.changes.forEach(c => { keep(c.method); c.witness.forEach(keep); });
+    if (HAS_DIFF) DATA.diff.changes.forEach(c => { keep(c.method); c.witness.forEach(keep); });
     else d.methods.filter(m => m.verdict === "ON_PATH").forEach(m => relevant.add(m.class));
     const s = byId(selected); if (s) { relevant.add(s.class); s.witness.forEach(keep); }
   }
@@ -187,111 +307,89 @@ function renderMap() {
     pkgs.get(pkg).get(m.class).push(m);
   }
   for (const [pkg, classes] of pkgs) {
-    const sec = el("div", "pkg"); sec.append(el("div", "pkg-name", pkg));
+    const sec = el("div", "pkg"); sec.append(el("div", "pkg-name", pkg || "(default package)"));
     const grid = el("div", "classes");
     for (const [cls, methods] of classes) {
       const card = el("div", "cls"), head = el("div", "cls-head");
       head.append(el("strong", null, cls.split(".").pop()));
       const p = pos[cls];
-      if (p) head.append(el("span", "pos", p.position.toLowerCase() + " · " + p.dependents + (p.dependents === 1 ? " dependent" : " dependents")));
+      if (p) head.append(el("span", "pos", p.position.toLowerCase() + ", " + plural(p.dependents, "dependent", "dependents")));
       const rows = el("div", "rows");
       for (const m of methods) {
-        const b = el("button", "row v-" + m.verdict); b.type = "button"; b.dataset.id = m.method;
+        const c = changes[m.method];
+        const b = el("button", "row v-" + m.verdict + (c ? " changed" : "")); b.type = "button"; b.dataset.id = m.method;
         b.title = LABEL[m.verdict] + ": " + m.reason;
         b.append(el("i", "sw"), el("span", "nm", short(m.name)));
-        if (d.sinks.includes(m.method)) b.append(el("span", "tag sink", "sink " + m.domains.join(" ")));
-        if (changes[m.method]) b.append(el("span", "tag chg", changes[m.method].kind));
-        b.addEventListener("click", () => select(m.method));
+        if (d.sinks.includes(m.method)) b.append(el("span", "t sink", "sink " + m.domains.join(" ")));
+        if (c) b.append(el("span", "t chg", c.kind));
+        b.addEventListener("click", () => select(m.method, false));
         rows.append(b);
       }
       card.append(head, rows); grid.append(card);
     }
     sec.append(grid); map.append(sec);
   }
-  if (!shown) map.append(el("p", "note", "No methods match."));
-  else if (shown < d.methods.length) map.append(el("p", "note", "Showing " + shown + " of " + d.methods.length + " methods."));
+  $("mapcount").textContent = shown < d.methods.length ? shown + " of " + d.methods.length + " methods" : plural(d.methods.length, "method", "methods");
+  if (!shown) map.append(el("p", "note", "No class or method matches the filter."));
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.id = "arrows"; map.append(svg);
 }
 
-function renderDetail() {
-  const box = $("detail"); box.replaceChildren();
+function renderProof() {
+  const box = $("proof"); box.replaceChildren();
   const m = byId(selected);
-  if (!m) { box.append(el("p", "small", "Click a method on the map to see its verdict and the proof.")); return; }
+  if (!m) { box.append(el("p", "muted", "Select a method to see its verdict and the proof behind it.")); return; }
   box.append(el("div", "name", m.name));
-  const pill = el("span", "pill v-" + m.verdict); pill.append(el("i", "sw"), document.createTextNode(LABEL[m.verdict] + (m.domains.length ? " · " + m.domains.join(", ") : "")));
-  box.append(pill);
-  box.append(el("p", null, "It " + m.reason + "."));
+  const v = el("div", "verdict v-" + m.verdict); v.append(el("i", "sw"), document.createTextNode(LABEL[m.verdict]));
+  if (m.domains.length) v.append(el("span", "dom", "into " + m.domains.join(", ")));
+  box.append(v, el("p", null, sentence(m.reason)));
+  if (HAS_DIFF && mode === "base") box.append(el("p", "note", "Shown as it was before the change."));
   if (m.witness.length > 1) {
-    box.append(el("h2", null, "Proof"));
-    const ol = el("ol", "steps");
+    box.append(el("h3", null, "The proof"));
+    const ol = el("ol", "chain");
     m.witness.forEach((id, i) => {
-      if (i > 0) ol.append(el("li", "via", "↓ " + m.links[i - 1]));
-      const li = el("li"); li.append(linkTo(id)); ol.append(li);
+      if (i > 0) { const li = el("li"); li.append(el("span", "rail"), el("span", "via", m.links[i - 1])); ol.append(li); }
+      const li = el("li"), last = i === m.witness.length - 1, step = el("span", "step");
+      step.append(linkTo(id));
+      if (current().sinks.includes(id)) { const s = byId(id); step.append(el("span", "sinktag", "sink" + (s && s.domains.length ? " " + s.domains.join(" ") : ""))); }
+      li.append(el("span", "dot" + (last && current().sinks.includes(id) ? " end" : "")), step); ol.append(li);
     });
     box.append(ol);
   }
   const callers = current().edges.filter(e => e[1] === selected).map(e => e[0]);
   const callees = current().edges.filter(e => e[0] === selected && byId(e[1])).map(e => e[1]);
+  const cols = el("div", "cols");
   for (const [title, ids] of [["Called by", callers], ["Calls", callees]]) {
     if (!ids.length) continue;
-    box.append(el("h2", null, title));
-    const ul = el("ul", "steps"); for (const id of ids) { const li = el("li"); li.append(linkTo(id)); ul.append(li); }
-    box.append(ul);
+    const col = el("div"); col.append(el("h3", null, title + " (" + ids.length + ")"));
+    const ul = el("ul", "refs"); for (const id of ids.slice(0, 12)) { const li = el("li"); li.append(linkTo(id)); ul.append(li); }
+    col.append(ul); if (ids.length > 12) col.append(el("p", "note", "and " + (ids.length - 12) + " more"));
+    cols.append(col);
   }
+  if (cols.children.length) box.append(cols);
 }
 
 function linkTo(id) {
-  if (!byId(id)) return el("span", null, nameOf(id));
-  const b = el("button", "link", nameOf(id)); b.type = "button"; b.addEventListener("click", () => select(id)); return b;
+  if (!byId(id)) return el("span", "mono", nameOf(id));
+  const b = el("button", "link", nameOf(id)); b.type = "button"; b.addEventListener("click", () => select(id, false)); return b;
 }
 
-function renderManifest() {
-  const box = $("manifest"); box.replaceChildren();
-  if (!HAS_DIFF || mode === "base") {
-    box.append(el("h2", null, "Sinks"));
-    const ul = el("ul", "steps");
-    for (const id of current().sinks) { const li = el("li"); li.append(linkTo(id)); ul.append(li); }
-    if (!current().sinks.length) box.append(el("p", "small", "No sinks are declared, so nothing is critical. Add @Critical or a policy file."));
-    box.append(ul);
-    return;
-  }
-  const d = DATA.diff;
-  box.append(el("h2", null, "Review manifest"));
-  if (d.policy.length) {
-    const sec = el("div", "bucket v-ON_PATH"); const t = el("div", "bucket-title"); t.append(el("i", "sw"), document.createTextNode("Policy changes (" + d.policy.length + ")")); sec.append(t);
-    const ul = el("ul", "shape"); d.policy.forEach(s => ul.append(el("li", null, s))); sec.append(ul); box.append(sec);
-  }
-  for (const b of ["MUST", "SHOULD", "SKIP"]) {
-    const items = d.changes.filter(c => c.bucket === b);
-    if (!items.length) continue;
-    const sec = el("div", "bucket v-" + BUCKET_V[b]);
-    const t = el("div", "bucket-title"); t.append(el("i", "sw"), document.createTextNode(BUCKET[b] + " (" + items.length + ")")); sec.append(t);
-    for (const c of items.slice(0, 200)) {
-      const it = el("button", "item"); it.type = "button"; it.append(document.createTextNode(c.name + " "));
-      it.append(el("em", null, c.kind + (c.newDomains.length ? ", new path into " + c.newDomains.join(", ") : "")));
-      if (byId(c.method)) it.addEventListener("click", () => select(c.method)); else it.disabled = true;
-      sec.append(it);
-    }
-    if (items.length > 200) sec.append(el("p", "small", "and " + (items.length - 200) + " more"));
-    box.append(sec);
-  }
-  if (d.shape.length) {
-    const sec = el("div", "bucket"); sec.append(el("div", "bucket-title", "Structure changes (" + d.shape.length + ")"));
-    const ul = el("ul", "shape"); d.shape.forEach(s => ul.append(el("li", null, s))); sec.append(ul); box.append(sec);
-  }
+// A removed method exists only before the change, an added one only after: show the side it lives on.
+function select(id, fromList) {
+  if (!byId(id)) { const other = mode === "head" ? "base" : "head"; if (DATA[other] && byId(id, other)) mode = other; }
+  selected = id;
+  refresh();
+  if (fromList && window.matchMedia("(max-width: 860px)").matches) $("proof").scrollIntoView({ behavior: "smooth", block: "start" });
 }
-
-function select(id) { selected = id; if (scope === "relevant" || query) { renderMap(); } paint(); }
 
 function paint() {
   const m = byId(selected), map = $("map");
   const chain = m ? m.witness : [];
-  map.classList.toggle("picked", !!m);
   map.querySelectorAll(".row").forEach(r => {
     r.classList.toggle("inchain", chain.includes(r.dataset.id) || r.dataset.id === selected);
     r.classList.toggle("sel", r.dataset.id === selected);
   });
-  renderDetail();
+  $("list").querySelectorAll(".item").forEach(i => i.setAttribute("aria-current", String(i.dataset.id === selected)));
+  renderProof();
   drawArrows();
 }
 
@@ -320,27 +418,26 @@ function drawArrows() {
   }
 }
 
-function setMode(next) {
-  mode = next;
+function refresh() {
   $("btn-base").setAttribute("aria-pressed", String(mode === "base"));
   $("btn-head").setAttribute("aria-pressed", String(mode === "head"));
   $("btn-relevant").setAttribute("aria-pressed", String(scope === "relevant"));
   $("btn-all").setAttribute("aria-pressed", String(scope === "all"));
-  renderLegend(); renderMap(); renderManifest(); paint();
+  renderLegend(); renderMap(); paint();
 }
+
+if (HAS_DIFF) { const first = DATA.diff.changes.find(c => c.bucket === "MUST" && c.kind !== "removed") || DATA.diff.changes.find(c => c.kind !== "removed") || DATA.diff.changes[0]; if (first) selected = first.method; }
+if (!selected) { const m = DATA.head.methods.find(x => x.verdict === "ON_PATH" && x.witness.length > 1); if (m) selected = m.method; }
+if (selected && !byId(selected) && DATA.base && byId(selected, "base")) mode = "base";
 $("versions").hidden = !HAS_DIFF;
-$("lede").textContent = HAS_DIFF
-  ? "Every method coloured by verdict, before and after the change. Click a method to see the proof for its verdict."
-  : "Every method coloured by verdict. Click a method to see the proof for its verdict.";
-$("btn-base").addEventListener("click", () => setMode("base"));
-$("btn-head").addEventListener("click", () => setMode("head"));
-$("btn-relevant").addEventListener("click", () => { scope = "relevant"; setMode(mode); });
-$("btn-all").addEventListener("click", () => { scope = "all"; setMode(mode); });
+$("btn-base").addEventListener("click", () => { mode = "base"; refresh(); });
+$("btn-head").addEventListener("click", () => { mode = "head"; refresh(); });
+$("btn-relevant").addEventListener("click", () => { scope = "relevant"; refresh(); });
+$("btn-all").addEventListener("click", () => { scope = "all"; refresh(); });
 $("search").addEventListener("input", e => { query = e.target.value; renderMap(); paint(); });
 window.addEventListener("resize", drawArrows);
-setMode("head");
+renderAnswer(); renderList(); refresh();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawArrows);
 </script>
-
 </body>
 </html>

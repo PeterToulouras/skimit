@@ -201,7 +201,7 @@ public final class Analysis {
         return "runs when a framework or library calls " + entry.method().pretty() + " through "
             + how + ", at a time the analysis cannot see";
       default:
-        return "nothing connects it to any sink";
+        return "has no connection to any sink";
     }
   }
 
@@ -434,6 +434,17 @@ public final class Analysis {
         frameworkInvoked.put(n, null);
         calledBecause.put(n, e.getValue());
         work.add(n);
+        // The framework also builds the object those methods run on.
+        String cls = e.getKey().owner();
+        for (MethodNode mn : graph.program.classes.get(cls).methods) {
+          if (!mn.name.startsWith("<")) continue;
+          for (Node init : graph.nodesOf.getOrDefault(new MethodKey(cls, mn.name, mn.desc), List.of())) {
+            if (!frameworkInvoked.containsKey(init) && !onPath.contains(init)) {
+              frameworkInvoked.put(init, n);
+              work.add(init);
+            }
+          }
+        }
       }
     }
     while (!work.isEmpty()) {

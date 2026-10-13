@@ -25,11 +25,18 @@ CODEBASES = [
 ]
 
 # Commits by what they needed: no code change, isolated only, should review, must review.
+# From experiments/2026-10/results.json: every project under the same rule (data writes are the sinks).
 REPLAY = [
-    ("Spring PetClinic", "72 commits, 2017 to 2026", [23, 14, 18, 17]),
+    ("XXL-JOB", "195 commits, 2024 to 2026", [32, 11, 55, 97]),
+    ("Spring PetClinic", "84 commits, 2019 to 2026", [31, 14, 20, 19]),
+    ("PetClinic REST", "78 commits, 2018 to 2026", [12, 12, 23, 31]),
+    ("Apollo", "68 commits, 2024 to 2026", [1, 14, 25, 28]),
+    ("litemall", "45 commits, 2020 to 2025", [4, 18, 4, 19]),
+    ("newbee-mall", "37 commits, 2019 to 2025", [4, 8, 9, 16]),
     ("Spring Framework PetClinic", "26 commits, 2015 to 2026", [5, 4, 13, 4]),
-    ("JPetStore", "18 commits, 2020 to 2026", [9, 2, 6, 1]),
-    ("XXL-JOB", "195 commits, 2024 to 2026", [32, 18, 71, 74]),
+    ("JPetStore", "22 commits, 2020 to 2026", [13, 0, 6, 3]),
+    ("vhr", "20 commits, 2019 to 2020", [2, 2, 8, 8]),
+    ("All nine projects", "575 commits", [104, 83, 163, 225]),
 ]
 
 
@@ -43,6 +50,8 @@ def bar(x, y, w, h, parts, t, fmt):
     total = sum(v for _, v in parts)
     out, cx, gap = [], x, 2
     for key, v in parts:
+        if v == 0:
+            continue
         sw = w * v / total
         out.append(f'<rect x="{cx:.1f}" y="{y}" width="{max(sw - gap, 1):.1f}" height="{h}" rx="3" fill="{t[key]}"/>')
         if sw >= 30:
@@ -73,7 +82,7 @@ def verdicts(t):
         body += text(0, y + 12, name, t["ink"], 14, weight="600") + text(0, y + 30, sub, t["muted"], 12)
         body += bar(left, y, bw, 22, list(zip([k for k, _ in VERDICTS], shares)), t, lambda v, total: f"{v:g}%")
         y += 64
-    return wrap(w, y - 8, body, "Share of methods by verdict in three open-source codebases")
+    return wrap(w, y - 8, body, "Share of methods by verdict in six open-source codebases")
 
 
 def replay(t):
@@ -85,7 +94,7 @@ def replay(t):
         body += text(0, y + 12, name, t["ink"], 14, weight="600") + text(0, y + 30, sub, t["muted"], 12)
         body += bar(left, y, bw, 22, list(zip([k for k, _ in keys], counts)), t, lambda v, total: f"{v}")
         y += 64
-    return wrap(w, y - 8, body, "What real commits to four open-source projects needed")
+    return wrap(w, y - 8, body, "What 575 real commits to nine open-source projects needed, under one fixed rule")
 
 
 for name, t in THEMES.items():

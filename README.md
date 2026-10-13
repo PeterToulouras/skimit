@@ -13,11 +13,10 @@ check). skimit works out, for every change, whether it can touch one of those pl
 the chain of calls that proves it. No model scores the diff: the same commit always gets the same
 answer, and every answer comes with its reason.
 
-**Status: 0.1.0.** The verdicts are not taken on trust. `skimit verify` records real runs and
-compares them with the analysis; on three open-source test suites it now finds nothing the
-analysis missed, after finding and fixing twenty-three such misses on the way
-([How the verdicts are checked](#how-the-verdicts-are-checked)). What is still outside the model
-is listed under [Known gaps](#known-gaps).
+**Status: 0.1.1.** The verdicts are not taken on trust. `skimit verify` records real runs and
+compares them with the analysis, and an [experiment on 575 real commits, 21 security fixes and six
+test suites](docs/experiment.md) reports where it was right and where it was wrong, with the data.
+What is still outside the model is listed under [Known gaps](#known-gaps).
 
 ![A one-line change to a report class is flagged as a new path into the ledger, with the call chain as proof](docs/demo.gif)
 
@@ -203,46 +202,51 @@ renamed locals are not changes.
 
 ## How the verdicts are checked
 
-Every number in this section and the next comes from an open-source project, and the sink
-declarations used are in [examples/policies](examples/policies), so each one can be re-run.
+Every number in this section and the next comes from an open-source project and can be re-run.
+The full account, with what went wrong, is in [docs/experiment.md](docs/experiment.md); the raw
+data is in [experiments/2026-10](experiments/2026-10).
 
 ### Against real runs
 
 Each project's own test suite was run with the recording agent attached, test code included so
-that a whole test counts as one flow.
+that a whole test counts as one flow. Every project used the same rule: any write through a
+repository, mapper or DAO is a sink.
 
-| Project | Tests | Sink calls | Methods seen in critical flows | Misses at first | Misses now |
-|---|---:|---:|---:|---:|---:|
-| Spring PetClinic | 79 | 22 | 76 | 22 | 0 |
-| Spring Framework PetClinic | 75 | 21 | 75 | 1 | 0 |
-| JPetStore | 98 | 17 | 52 | 0 | 0 |
+| Project | Seen during development | Tests | Sink calls | Methods in critical flows | Misses, 0.1.0 | Misses, 0.1.1 |
+|---|---|---:|---:|---:|---:|---:|
+| Spring PetClinic | yes | 79 | 22 | 76 | 0 | 0 |
+| Spring Framework PetClinic | yes | 75 | 21 | 75 | 0 | 0 |
+| JPetStore | yes | 98 | 49 | 82 | 0 | 0 |
+| PetClinic REST | no | 237 | 93 | 178 | 0 | 0 |
+| Apollo | no | 1,404 | 918 | 673 | 15 | 0 |
+| JHipster sample app | no | 216 | 200 | 206 | 0 | 0 |
 
-The first runs found twenty-three methods that took part in a critical flow without being
-flagged for it. They came from four gaps, each now closed:
+Apollo, the first large project to go through this check, showed 15 methods that 0.1.0 got wrong:
+9 it had called isolated and 6 it had flagged but ranked too low. The causes were servlet filters
+that hand on to the chain, a JPA converter, Spring's reflection helper, and an aspect's
+constructor. Those gaps are closed in 0.1.1. The JHipster sample app was run only after the fixes,
+and was clean.
 
-- **Methods Spring runs before a request handler** (`@ModelAttribute`, `@InitBinder`) and what
-  they set up, such as a validator: 13.
-- **Dispatch by URL.** Test methods that call the framework, which then picks the controller: 7.
-  Such a call is now treated as one the analysis cannot follow.
-- **A component that code also constructs by hand.** A formatter was treated as ordinary code
-  because something built one with `new`; a stereotype annotation now settles it: 2.
-- **Objects held by the data being saved.** An entity reached only through another entity's
-  field: 1.
+This was the second round. Before 0.1.0, the same check on the three development projects found
+twenty-three misses from four other gaps (methods Spring runs before a request handler, dispatch
+by URL, components that code also constructs by hand, objects held by the data being saved), all
+closed before release. Expect a framework skimit has not met to add to the list, and run
+`skimit verify` on your own tests to find out.
 
-JPetStore was run after those fixes and had none, which is the fairer test: nothing was tuned on
-it.
+### Against bug fixes and security fixes
 
-### Against bug fixes
-
-`scripts/fix-check.py` takes the replayed history below, finds the commits that say they fix
-something, and asks of each method a fix changed in flagged code: when that method was last
-changed, how had the change been classified? Across the four projects, 43 fixes changed 42 such
-methods; 23 had an earlier change inside the replayed window. Six of those earlier changes were
-"must review", seventeen "should review", and none "isolated". No fix landed on code the manifest
-had said could be skimmed.
-
-That sample is small, and the last change to a method is only a stand-in for the change that
-introduced the bug. It is a check that would have caught a bad rule, not a proof of a good one.
+- **Bug fixes.** `scripts/fix-check.py` takes the commits in the replay below that say they fix
+  something (157 of 575) and asks of each method a fix changed in flagged code: when that method
+  was last changed, how had the change been classified? Of 191 such methods with an earlier change
+  in the replayed window, 96 had been "must review", 95 "should review" and none "isolated". This
+  mostly shows the verdicts are stable; it would have caught a bad rule, it does not prove a good
+  one.
+- **Fixes in isolated code.** 30 of the 157 fix commits changed only isolated methods. Isolated
+  means "cannot affect what the sinks are asked to do", not "cannot contain a bug".
+- **Security fixes.** Of 18 real vulnerability fixes that still build, 12 were must review, 1
+  should review, and 4 isolated. All four are in code that only reads, which a writes-only rule
+  does not treat as critical: if reading something is sensitive, declare the read as a sink. One fix exposed
+  a gap, now closed: a permission check called from a `@PreAuthorize` expression string.
 
 ## What the measurements say
 
@@ -262,7 +266,8 @@ introduced the bug. It is a check that would have caught a bad rule, not a proof
 | Broadleaf Commerce 3.1.15, framework and common | payment gateway transactions | 7,785 | 1.6% | 62.3% | 15.3% | 20.8% |
 | Kill Bill 0.25.4, thirteen modules | payment plugin calls that move money | 10,002 | 2.7% | 68.4% | 18.6% | 10.3% |
 
-Shares are of methods with a body. The two largest were analysed from their published jars; the
+The sinks behind this table are one reasonable choice per project, in
+[examples/policies](examples/policies). Shares are of methods with a body. The two largest were analysed from their published jars; the
 largest run takes under ten seconds.
 
 - **The top tier is small and exact.** Between 1.6% and 7.8% of methods can reach a sink: 124 of
@@ -279,34 +284,37 @@ largest run takes under ten seconds.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/replay-dark.svg">
-  <img src="docs/replay-light.svg" alt="What real commits to four open-source projects needed" width="780">
+  <img src="docs/replay-light.svg" alt="What 575 real commits to nine open-source projects needed, under one fixed rule" width="780">
 </picture>
 
 `scripts/replay.sh` checks out each recent commit that touches main Java sources, builds it and
-its parent, and runs `skimit diff` between the two. Run over four projects' histories:
+its parent, and runs `skimit diff` between the two. Run over nine projects' histories with one
+rule for all of them (any write through a repository, mapper or DAO is a sink):
 
-| Project | Commits analysed | No bytecode change | Isolated only | Should review | Must review |
+| Project | Commits analysed | No code change | Isolated only | Should review | Must review |
 |---|---:|---:|---:|---:|---:|
-| Spring PetClinic (2017 to 2026) | 72 | 23 | 14 | 18 | 17 |
-| Spring Framework PetClinic (2015 to 2026) | 26 | 5 | 4 | 13 | 4 |
-| JPetStore (2020 to 2026) | 18 | 9 | 2 | 6 | 1 |
-| XXL-JOB (2024 to 2026) | 195 | 32 | 18 | 71 | 74 |
-| **Total** | **311** | **69** | **38** | **108** | **96** |
+| XXL-JOB | 195 | 32 | 11 | 55 | 97 |
+| Spring PetClinic | 84 | 31 | 14 | 20 | 19 |
+| PetClinic REST | 78 | 12 | 12 | 23 | 31 |
+| Apollo | 68 | 1 | 14 | 25 | 28 |
+| litemall | 45 | 4 | 18 | 4 | 19 |
+| newbee-mall | 37 | 4 | 8 | 9 | 16 |
+| Spring Framework PetClinic | 26 | 5 | 4 | 13 | 4 |
+| JPetStore | 22 | 13 | 0 | 6 | 3 |
+| vhr | 20 | 2 | 2 | 8 | 8 |
+| **Total** | **575** | **104** | **83** | **163** | **225** |
 
-- **34% of commits needed no body review** (107 of 311): either nothing in the bytecode changed
+- **33% of commits needed no body review** (187 of 575): either nothing in the bytecode changed
   (comments, formatting, renamed locals) or every changed method was isolated.
-- **31% contained something on a critical path** (96 of 311), and the manifest says which methods
-  and why. The remaining 35% touched code that takes part in a critical flow without reaching the
+- **39% contained something on a critical path** (225 of 575), and the manifest says which methods
+  and why. The remaining 28% touched code that takes part in a critical flow without reaching the
   sink.
-- **The projects differ a lot.** The three small applications needed no body review for 35% to 61%
-  of commits. XXL-JOB, a scheduler whose whole job is to trigger the sink, needed none for 26% and
-  a careful read for 38%.
+- **The projects differ a lot**, from 20% needing no body review (vhr) to 59% (JPetStore).
 
-Limits of this data: commits that no longer build were left out (28 of 100 for Spring PetClinic,
-74 of 100 for Spring Framework PetClinic, 25 of 43 for JPetStore, 5 of 200 for XXL-JOB), mostly
-older ones whose dependencies have disappeared, so the samples lean recent. The sinks are one
-reasonable choice per project, not the maintainers' own. The replay on your own history, with
-your own sinks, is the number that matters:
+Limits of this data: 183 of the 758 commits tried no longer build, mostly older ones whose
+dependencies have disappeared, so the samples lean recent. "Every database write" is a blunt rule,
+not the maintainers' own choice of what matters; narrower sinks leave more code isolated. The
+replay on your own history, with your own sinks, is the number that matters:
 
 ```
 scripts/replay.sh path/to/your/repo your.policy 100
@@ -337,6 +345,11 @@ code.
 - **Library types behind library types.** The hierarchy is known only for the classes you pass in.
   A class that implements a library interface is not matched to calls made through that
   interface's own parents.
+- **Flows that leave the process.** A call to another service is not a sink unless you declare
+  it. Code that guards or prepares such a call is isolated until you do.
+- **Expressions in strings.** A bean method named in an annotation expression
+  (`@PreAuthorize("@rules.canEdit(#id)")`) is followed. Other expression languages, templates and
+  configuration files that name methods are not.
 - **Reflection by another name.** Opaque calls are matched by a list. A reflective path through a
   library that is not on the list is invisible.
 - **Lambda numbering.** Adding a lambda can renumber the ones after it in the same class, which

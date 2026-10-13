@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.1
+
+Fixes found by the [October 2026 experiment](docs/experiment.md), which ran the runtime checker on
+projects the analysis had never seen and replayed known security fixes.
+
+- A bean method named in an annotation expression, such as
+  `@PreAuthorize("@permissionValidator.canEdit(#id)")`, is now called by the annotated method.
+  Before, a permission check wired this way was isolated even when it guarded a critical write.
+- Handing a request on to the rest of a chain (`FilterChain.doFilter`, `WebFilterChain.filter`,
+  `ProceedingJoinPoint.proceed`, `MethodInvocation.proceed`, `ClientHttpRequestExecution.execute`)
+  is an opaque call: the filter or interceptor is on the stack of whatever runs next.
+- Spring's `ReflectionUtils.invokeMethod`, `ReflectionTestUtils.invoke*` and Commons Lang
+  `MethodUtils.invoke*` are opaque calls.
+- A JPA `@Converter` class is built and called by the framework even when code also constructs one.
+- The constructors of a class with aspect advice or event listeners run when the framework builds it.
+- `scripts/replay.sh` accepts `REPLAY_COMMITS` to replay an explicit list of commits, and skips the
+  git-commit-id plugin, which fails in a detached worktree.
+- The HTML report is rebuilt around the answer: a headline saying how many methods must be
+  reviewed, the review list with the reason for each method, the proof for the selected method
+  beside it, and the map of the code underneath. Selecting a removed method shows the code as it
+  was before the change. An isolated method now reads "has no connection to any sink".
+
 ## 0.1.0
 
 First release.

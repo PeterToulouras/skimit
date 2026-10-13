@@ -1,0 +1,30 @@
+# skimit verify
+
+The run called a sink 918 times, in 216 of 58174 flows. 5636 application methods ran.
+
+673 methods took part in a flow up to the point it reached a sink:
+
+- ON_PATH: 244
+- INFLUENCES: 419
+- UNPROVEN: 1
+- ISOLATED: 9
+
+**15 misses.** The run shows these taking part in a critical flow:
+
+- `SkipAuthorizationConfiguration.skipAuthorizationUserAuthenticationFilter[lambda](ServletRequest, ServletResponse, FilterChain)` is ISOLATED but was on the call stack when a sink was called
+- `AdminServiceAuthenticationFilter.doFilter(ServletRequest, ServletResponse, FilterChain)` is ISOLATED but was on the call stack when a sink was called
+- `JpaMapFieldJsonConverter.convertToDatabaseColumn(Object)` is ISOLATED but ran before a sink was called, in the same flow (flow started at `ApolloServiceRegistryHeartbeatApplicationRunner.heartbeat()`)
+- `JpaMapFieldJsonConverter.convertToDatabaseColumn(Map)` is ISOLATED but ran before a sink was called, in the same flow (flow started at `ApolloServiceRegistryHeartbeatApplicationRunner.heartbeat()`)
+- `JpaMapFieldJsonConverter.convertToEntityAttribute(Object)` is ISOLATED but ran before a sink was called, in the same flow (flow started at `ApolloServiceRegistryHeartbeatApplicationRunner.heartbeat()`)
+- `JpaMapFieldJsonConverter.convertToEntityAttribute(String)` is ISOLATED but ran before a sink was called, in the same flow (flow started at `ApolloServiceRegistryHeartbeatApplicationRunner.heartbeat()`)
+- `ReleaseHistoryServiceTest.invokeCleanReleaseHistory(int)` is INFLUENCES but was on the call stack when a sink was called
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryTransactionalRollBack[lambda](Method, ReleaseHistoryService)` is INFLUENCES but was on the call stack when a sink was called
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryIgnoresInactiveGrayReleaseRules()` is INFLUENCES but was on the call stack when a sink was called
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsPreviousReleaseOfRetainedHistory()` is ISOLATED but was on the call stack when a sink was called
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsReleaseReferencedByActiveGrayReleaseRule()` is INFLUENCES but was on the call stack when a sink was called
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsReleaseReferencedByRetainedHistory()` is INFLUENCES but was on the call stack when a sink was called
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryPhysicallyDeletesUnreferencedRows()` is ISOLATED but was on the call stack when a sink was called
+- `RepositoryAspect.<init>()` is ISOLATED but ran before a sink was called, in the same flow (flow started at `SystemRoleManagerService.init()`)
+- `UserTypeResolverFilter.doFilterInternal(HttpServletRequest, HttpServletResponse, FilterChain)` is INFLUENCES but was on the call stack when a sink was called
+
+For information: 5 isolated methods ran only after the sink had been called, in the same flow. They could not have changed what the sink was asked to do, though an exception there could still undo it.

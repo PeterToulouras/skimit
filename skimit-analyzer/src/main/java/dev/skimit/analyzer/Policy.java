@@ -137,6 +137,16 @@ public final class Policy {
     // Dispatch by URL or name: the framework picks the handler at run time.
     "org.springframework.test.web.servlet.MockMvc#perform",
     "jakarta.servlet.RequestDispatcher#*", "javax.servlet.RequestDispatcher#*",
+    // Handing on to the rest of a chain: whatever handles the request runs inside this call.
+    "jakarta.servlet.FilterChain#doFilter", "javax.servlet.FilterChain#doFilter",
+    "org.springframework.web.server.WebFilterChain#filter",
+    "org.springframework.http.client.ClientHttpRequestExecution#execute",
+    "org.aspectj.lang.ProceedingJoinPoint#proceed", "org.aopalliance.intercept.Joinpoint#proceed",
+    "org.aopalliance.intercept.MethodInvocation#proceed",
+    // Reflection helpers.
+    "org.springframework.util.ReflectionUtils#invokeMethod",
+    "org.springframework.test.util.ReflectionTestUtils#invoke*",
+    "org.apache.commons.lang3.reflect.MethodUtils#invoke*",
   };
 
   /**
@@ -157,7 +167,8 @@ public final class Policy {
       "Ljakarta/servlet/annotation/WebFilter;", "Ljavax/servlet/annotation/WebFilter;",
       "Ljakarta/servlet/annotation/WebServlet;", "Ljavax/servlet/annotation/WebServlet;",
       "Ljakarta/servlet/annotation/WebListener;", "Ljavax/servlet/annotation/WebListener;",
-      "Ljakarta/ws/rs/ext/Provider;", "Ljavax/ws/rs/ext/Provider;", "Lorg/aspectj/lang/annotation/Aspect;");
+      "Ljakarta/ws/rs/ext/Provider;", "Ljavax/ws/rs/ext/Provider;", "Lorg/aspectj/lang/annotation/Aspect;",
+      "Ljakarta/persistence/Converter;", "Ljavax/persistence/Converter;");
 
   public static Policy defaults() {
     Policy p = new Policy();

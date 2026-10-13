@@ -328,7 +328,9 @@ public final class CallGraph {
       List<Node> nodes = nodesOf.get(key);
       if (nodes == null) continue;
       Set<AbstractInsnNode> onThis = onThis(cn.name, mn);
+      List<String[]> expressionCalls = mn.name.startsWith("<") ? List.<String[]>of() : expressionCalls(cn, mn);
       for (Node from : nodes) {
+        for (String[] call : expressionCalls) expressionCall(from, call[0], call[1]);
         for (AbstractInsnNode insn : mn.instructions) {
           if (insn instanceof MethodInsnNode mi) {
             int kind = mi.getOpcode() == Opcodes.INVOKESTATIC ? STATIC
@@ -338,6 +340,92 @@ public final class CallGraph {
             lambda(from, indy, onThis.contains(insn));
           } else if (insn instanceof FieldInsnNode fi) {
             field(from, fi, onThis.contains(insn));
+          }
+        }
+      }
+    }
+  }
+
+  private static final java.util.regex.Pattern BEAN_CALL = java.util.regex.Pattern.compile("@(\\w+)\\??\\.(\\w+)\\s*\\(");
+  private Map<String, Set<String>> beans;
+
+  /**
+   * Bean method calls written inside annotation strings on a method or its class, such as
+   * {@code @PreAuthorize("@permissionValidator.canEdit(#id)")}: a framework evaluates the expression
+   * around the annotated method, so the annotated method in effect calls the bean method.
+   */
+  private List<String[]> expressionCalls(ClassNode cn, MethodNode mn) {
+    List<String> strings = new ArrayList<>();
+    for (List<org.objectweb.asm.tree.AnnotationNode> list : java.util.Arrays.asList(
+        mn.visibleAnnotations, mn.invisibleAnnotations, cn.visibleAnnotations, cn.invisibleAnnotations)) {
+      if (list != null) for (org.objectweb.asm.tree.AnnotationNode an : list) annotationStrings(an, strings);
+    }
+    List<String[]> out = new ArrayList<>();
+    for (String s : strings) {
+      java.util.regex.Matcher m = BEAN_CALL.matcher(s);
+      while (m.find()) out.add(new String[] {m.group(1), m.group(2)});
+    }
+    return out;
+  }
+
+  private static void annotationStrings(Object value, List<String> out) {
+    if (value instanceof String s) out.add(s);
+    else if (value instanceof List<?> l) for (Object o : l) annotationStrings(o, out);
+    else if (value instanceof org.objectweb.asm.tree.AnnotationNode an && an.values != null) {
+      for (int i = 1; i < an.values.size(); i += 2) annotationStrings(an.values.get(i), out);
+    }
+  }
+
+  /** Application classes a bean name may stand for; every class when the name cannot be resolved. */
+  private Set<String> beanClasses(String bean) {
+    if (beans == null) {
+      beans = new HashMap<>();
+      for (ClassNode cn : program.classes.values()) {
+        String simple = cn.name.substring(Math.max(cn.name.lastIndexOf('/'), cn.name.lastIndexOf('$')) + 1);
+        if (!simple.isEmpty()) {
+          beans.computeIfAbsent(Character.toLowerCase(simple.charAt(0)) + simple.substring(1), k -> new TreeSet<>()).add(cn.name);
+        }
+        List<String> names = new ArrayList<>();
+        if (cn.visibleAnnotations != null) {
+          for (org.objectweb.asm.tree.AnnotationNode an : cn.visibleAnnotations) {
+            if (Policy.MANAGED_CLASS_ANNOTATIONS.contains(an.desc)) annotationStrings(an, names);
+          }
+        }
+        for (String n : names) beans.computeIfAbsent(n, k -> new TreeSet<>()).add(cn.name);
+        // A factory method names a bean after itself (or after its annotation's value).
+        for (MethodNode mn : cn.methods) {
+          if (mn.visibleAnnotations == null) continue;
+          for (org.objectweb.asm.tree.AnnotationNode an : mn.visibleAnnotations) {
+            if (!an.desc.endsWith("/Bean;")) continue;
+            Type ret = Type.getReturnType(mn.desc);
+            if (ret.getSort() != Type.OBJECT) continue;
+            List<String> beanNames = new ArrayList<>(List.of(mn.name));
+            annotationStrings(an, beanNames);
+            List<String> types = new ArrayList<>(List.of(ret.getInternalName()));
+            types.addAll(subtypesOf(ret.getInternalName()));
+            for (String n : beanNames) for (String t : types) {
+              if (program.classes.containsKey(t)) beans.computeIfAbsent(n, k -> new TreeSet<>()).add(t);
+            }
+          }
+        }
+      }
+    }
+    Set<String> found = beans.get(bean);
+    return found != null ? found : program.classes.keySet();
+  }
+
+  private void expressionCall(Node from, String bean, String name) {
+    for (String type : beanClasses(bean)) {
+      List<String> owners = new ArrayList<>(receivers(type));
+      if (owners.isEmpty()) owners.add(type);
+      for (String r : owners) {
+        Set<String> seen = new HashSet<>();
+        for (String c = r; c != null && program.classes.containsKey(c); c = program.classes.get(c).superName) {
+          for (MethodNode mn : program.classes.get(c).methods) {
+            MethodKey target = new MethodKey(c, mn.name, mn.desc);
+            if (!mn.name.equals(name) || !hasBody(target) || !seen.add(mn.desc)) continue;
+            Set<Node> site = newSite(from);
+            for (Node n : nodesFor(target, r)) edge(from, n, site);
           }
         }
       }

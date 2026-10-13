@@ -15,7 +15,7 @@ method; it is evidence, not proof.
 import json, os, re, subprocess, sys
 
 repo, work = sys.argv[1], sys.argv[2]
-FIX = re.compile(r"\b(fix|fixes|fixed|bug|defect|regression|hotfix|npe|修复|修正|问题|异常|漏洞)", re.I)
+FIX = re.compile(r"\b(fix|fixes|fixed|bug|defect|regression|hotfix|npe)\b|修复|修正|问题|异常|漏洞", re.I)
 
 rows = [json.loads(l) for l in open(os.path.join(work, "replay.jsonl")) if l.strip()]
 shas = [r["sha"] for r in rows if "skipped" not in r]            # newest first

@@ -1,0 +1,12 @@
+# skimit verify
+
+The run called a sink 0 times, in 0 of 121 flows. 169 application methods ran.
+
+0 methods took part in a flow up to the point it reached a sink:
+
+- ON_PATH: 0
+- INFLUENCES: 0
+- UNPROVEN: 0
+- ISOLATED: 0
+
+No sink was called, so nothing was checked. Run tests that exercise the critical code.

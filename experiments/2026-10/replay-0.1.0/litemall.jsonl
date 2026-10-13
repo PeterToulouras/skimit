@@ -1,0 +1,54 @@
+{"sha": "6afa95acb1a35b905edd813f5b12ed777fc4811f", "date": "2025-05-27", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "449aae9f596229c2acd766282953838a28ca4df0", "date": "2023-07-28", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 2}
+{"sha": "9f81d58ce012015956ce213496b5c5946b2a2627", "date": "2023-03-02", "must": 0, "should": 0, "isolated": 2, "policy": 0, "shape": 0}
+{"sha": "5f6e76d7fc5e2b37f72258d38698d6c71ead38fe", "date": "2022-06-12", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "b62c88b0da5297bba149d67b504b4e67b1d8b423", "date": "2022-03-30", "must": 0, "should": 0, "isolated": 5, "policy": 0, "shape": 2}
+{"sha": "21ac9ac10b1320643cb4cb58f51413df1a653fcd", "date": "2022-03-30", "must": 1, "should": 0, "isolated": 5, "policy": 0, "shape": 5}
+{"sha": "79a09d7af79f528659b22767d51115df5f5475fc", "date": "2022-03-30", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "cc70d66963b95a8904c178cc64f392860f482cdd", "date": "2022-03-30", "must": 3, "should": 0, "isolated": 0, "policy": 0, "shape": 2}
+{"sha": "f25c6a339a8fa1d8d08a8268859b5304dd8879e2", "date": "2021-11-11", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "a2838dd8a23fe5367a8f7ba9d5213a827645574b", "date": "2021-11-10", "must": 0, "should": 0, "isolated": 3, "policy": 0, "shape": 1}
+{"sha": "374f673641a324f66d977a7525f67fa1a775f532", "date": "2021-11-10", "must": 3, "should": 0, "isolated": 6, "policy": 0, "shape": 4}
+{"sha": "27bf4fae074821d1ce1c58386f97e6b273fe104a", "date": "2021-10-07", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "8c1b5d57886b04ee0252ea6cf50391ec951f2f34", "date": "2021-05-19", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "7c099e647d76b4fafc768ea30c79f4916945a185", "date": "2021-04-12", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "e9182f2c66be182bb6d873ce93990382a3984443", "date": "2021-03-14", "skipped": "did not build"}
+{"sha": "46d2a4e0801b79b43b35af2f3eccd4617da20cf3", "date": "2021-01-14", "must": 2, "should": 2, "isolated": 3, "policy": 0, "shape": 7}
+{"sha": "18510318a16d95a9806b9de793d85f3bd012d280", "date": "2021-01-10", "skipped": "did not build"}
+{"sha": "c733a28a3edaae36849dd43ad9068d79c8dba494", "date": "2021-01-10", "skipped": "did not build"}
+{"sha": "679117d53b391db501e134cbae0c2adbac190cdb", "date": "2020-12-27", "skipped": "did not build"}
+{"sha": "35bf2e5492236e8c5461bcb3850b61c0f93ff987", "date": "2020-11-29", "must": 2, "should": 1, "isolated": 64, "policy": 0, "shape": 11}
+{"sha": "5172853a30903a54e8a9df6b83ebd6a952ea463f", "date": "2020-11-26", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "aabc261708324d72a9295ccf4564f022b6b2225b", "date": "2020-11-01", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "9cf58564465db7900a8274b89426ecabd1d3a9bc", "date": "2020-09-28", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "332e93199b9c44255cefaf37fb5fa00f23c6ac6f", "date": "2020-09-26", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "2b69527d0d8efd948af76a1b3dd25ddbacb4988f", "date": "2020-08-21", "must": 0, "should": 2, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "749e6ab251e965147e6af1f03fb4956add28da97", "date": "2020-07-31", "must": 2, "should": 2, "isolated": 3, "policy": 0, "shape": 0}
+{"sha": "2365bed6f407146ee62df9d19e1d547b607dcd1f", "date": "2020-07-05", "skipped": "did not build"}
+{"sha": "8dd7c4bb2c18c7669ad6e0c298eab9eacbb47c04", "date": "2020-07-05", "skipped": "did not build"}
+{"sha": "27e6d275d1aa136b4a161554bc1faf6379826c4b", "date": "2020-07-02", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "7836237d708f168a2b130a052fa587c84ee90183", "date": "2020-06-26", "must": 0, "should": 3, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "2ad7b00cca875b610c6b4ba7025753dbec9ad983", "date": "2020-06-14", "must": 0, "should": 0, "isolated": 2, "policy": 0, "shape": 0}
+{"sha": "d611977ca47cb0ded74d908dbd764414df88e1da", "date": "2020-06-14", "must": 1, "should": 4, "isolated": 2, "policy": 0, "shape": 5}
+{"sha": "a2f77152d8c2146bf2fa6155d57febeb22c27307", "date": "2020-06-08", "must": 4, "should": 1, "isolated": 0, "policy": 0, "shape": 6}
+{"sha": "acb459a74b7af5c0f0ef5842b72549c9a8136e29", "date": "2020-06-04", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "c6d812eac8c07ae59347f7c051e95b9810ee61b5", "date": "2020-06-02", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "e1dfa1e4a2950d491af554e1e8929b30e49f5023", "date": "2020-06-01", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "74e8595931fd0a88fa9f431387eaab16fb0c72db", "date": "2020-06-01", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "455d1b129593fd3ba256d49b68efdd693e342c41", "date": "2020-05-07", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "13192ba320addf6d639747b582677d25ec0dd96a", "date": "2020-05-03", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "b3c51ff79d55d22fd5893e607847d925eb031859", "date": "2020-04-16", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "cf6f59d8119babd9b3278ff116c3c60e5dd7bc8c", "date": "2020-03-22", "must": 2, "should": 2, "isolated": 0, "policy": 0, "shape": 3}
+{"sha": "a3a36d82f960aeed2fb4ce2ead3933e121ce92a1", "date": "2020-03-22", "must": 0, "should": 0, "isolated": 1, "policy": 0, "shape": 0}
+{"sha": "4f6f34c261c9a27d7a46ba7bf3cfe9df0802addf", "date": "2020-03-21", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "c13d9230cca10d5fa75d0f165cfb32c3126916eb", "date": "2020-03-21", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "6d35c40efc0015a4b7ca53427bc6e1f1bd8f822f", "date": "2020-02-15", "must": 5, "should": 5, "isolated": 8, "policy": 0, "shape": 6}
+{"sha": "5e0bd4c0af85021260b1921abb441bf5d87a2d40", "date": "2020-02-13", "must": 0, "should": 0, "isolated": 6, "policy": 0, "shape": 6}
+{"sha": "11d3b5bdfe28b791d4cb12996ac35e14d83aaa1b", "date": "2020-02-12", "skipped": "did not build"}
+{"sha": "4611d829e37f25d7b85187d0b946422ad3e653b6", "date": "2020-02-12", "skipped": "did not build"}
+{"sha": "11a95ac7eee653f985c7d5ffb5c6004b0bf0031f", "date": "2020-02-12", "skipped": "did not build"}
+{"sha": "84ce042c798f03ee1c339776abf324e90d71f265", "date": "2020-02-10", "must": 1, "should": 40, "isolated": 2, "policy": 0, "shape": 21}
+{"sha": "4bbe33d7992bc7f737de14ef74844451c6cd8d3f", "date": "2020-02-10", "must": 2, "should": 8, "isolated": 1, "policy": 0, "shape": 3}
+{"sha": "09f8cf73c6b80c84c6250a1b786551737716ea38", "date": "2020-02-09", "must": 1, "should": 0, "isolated": 3, "policy": 0, "shape": 1}
+{"sha": "0a02b924f0e41f294e737329418e3cbd1b2b30b7", "date": "2020-02-09", "must": 1, "should": 1, "isolated": 3, "policy": 0, "shape": 2}
+{"sha": "f64f7d12f68679d3f78dc5e15c10872234909578", "date": "2020-02-09", "must": 2, "should": 613, "isolated": 29, "policy": 8, "shape": 15}

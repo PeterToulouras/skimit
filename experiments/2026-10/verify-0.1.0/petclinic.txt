@@ -1,0 +1,12 @@
+# skimit verify
+
+The run called a sink 22 times, in 18 of 319 flows. 228 application methods ran.
+
+76 methods took part in a flow up to the point it reached a sink:
+
+- ON_PATH: 16
+- INFLUENCES: 56
+- UNPROVEN: 4
+- ISOLATED: 0
+
+**No misses.** Every one of them was flagged, or the analysis made no claim about it.

@@ -1,0 +1,22 @@
+project,commit,date,result,advisory,must,should,isolated,subject,subject_in_english
+XXL-JOB,7a5239f3b4,2026-06-19,isolated only,,0,0,2,任务RollingLog权限校验完善，防止越权查看任务日志；,"Job rolling-log permission check completed, to stop logs being read without authorisation"
+XXL-JOB,b314e4ac76,2026-06-14,must review,,4,5,1,XSS攻击防护增强，ISSUS-3964类似问题批量解决，安全性提升；,XSS protection strengthened across similar cases (issue 3964)
+XXL-JOB,b683e65168,2025-08-24,must review,,13,0,2,【修复】IDOR越权问题修复，提升任务操作及日志管理安全性；,IDOR fix for job operations and log management
+XXL-JOB,c741d8361e,2025-08-23,no analysed code changed,CVE-2025-7787,0,0,0,【修复】漏洞修复（CVE-2025-7787），针对 httpJobHandler 支持配置URL白名单限制，防止服务器端请求伪造（SSRF）攻击。,CVE-2025-7787: URL allow-list for httpJobHandler against SSRF
+XXL-JOB,e578539f00,2024-11-10,should review,,0,1,0,【优化】任务信息、执行日志API完善，避免越权隐患；,Job info and execution log API tightened against privilege escalation
+XXL-JOB,a09f7f30a1,2024-11-10,must review,,10,4,4,【优化】任务信息、执行日志API完善，避免越权隐患；,Job info and execution log API tightened against privilege escalation
+XXL-JOB,7503bcb275,2024-11-10,must review,,2,0,0,Glue代码保存越权问题处理,Glue code save: privilege escalation fixed
+XXL-JOB,0885d7d8fe,2024-11-10,must review,,2,0,0,【优化】修改密码交互优化，解决CSRF隐患。,Password change reworked to remove a CSRF risk
+XXL-JOB,a2dc901131,2024-11-10,must review,CVE-2024-42681,12,11,14,"【修复】""CVE-2024-42681"" 子任务越权漏洞修复；",CVE-2024-42681: child-job privilege escalation fixed
+XXL-JOB,738d7721f0,2024-04-17,must review,CVE-2022-43183,3,1,0,"""CVE-2022-43183"" 越权漏洞修复。",CVE-2022-43183: privilege escalation fixed
+XXL-JOB,c6a4df2a7b,2024-01-20,isolated only,,0,0,1,调度日志页面XSS漏洞修复(ISSUE-3360)。,XSS on the schedule log page fixed (issue 3360)
+XXL-JOB,9293c61ca0,2023-03-23,isolated only,CVE-2022-43183,0,0,3,"""CVE-2022-43183"" SSRF漏洞修复。",CVE-2022-43183: SSRF fixed
+XXL-JOB,730c1066b8,2023-03-23,must review,CVE-2022-36157,3,1,2,"""CVE-2022-36157""授权漏洞修复。",CVE-2022-36157: authorisation flaw fixed
+XXL-JOB,9329fb39e7,2019-05-08,did not build,,,,,GLUE代码越权控制,Glue code privilege control
+Apollo,190b96e6fa,2026-10-11,must review,GHSA-6gfh-7m5g-c78c,1,1,0,Merge commit from fork,Advisory: rollback could copy another application's configuration
+Apollo,42d4d827eb,2026-10-11,must review,GHSA-8j5g-8m4g-frrh,1,0,0,Merge commit from fork,Advisory: gray-release rule update could be redirected to another application
+Apollo,5c930f9b49,2026-02-15,must review,,5,4,6,fix: normalize env name in PermissionController to prevent permission bypass (#5542),
+Apollo,42b6d98ca8,2025-06-08,isolated only,,0,0,2,fix: prevent unauthorized access to other users' apps in /apps/by-owner endpoint (#5396),
+Apollo,ad448d7899,2019-04-07,did not build,,,,,[APOLLO-2103] Fix SSRF (#2105),
+newbee-mall,ed8016ef3f,2020-05-28,must review,,1,0,0,:bug: Fixing xss bug.,
+litemall,49ab94d005,2018-10-16,did not build,,,,,"fix[litemall-wx-api]: 修复文件路径中包含""../""带来的安全问题","Path traversal (""../"") in file paths fixed"

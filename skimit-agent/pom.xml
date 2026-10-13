@@ -4,7 +4,7 @@
   <parent>
     <groupId>dev.skimit</groupId>
     <artifactId>skimit-parent</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
   </parent>
   <artifactId>skimit-agent</artifactId>
   <name>skimit-agent</name>

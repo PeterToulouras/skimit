@@ -314,4 +314,41 @@ class AnalysisTest {
     assertEquals(Position.LEAF, a.positions.get("D"));
     assertEquals(Position.LEAF, a.positions.get("C"));
   }
+
+  @Test
+  void beanMethodNamedInAnAnnotationExpressionIsCalledByTheAnnotatedMethod() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        "import java.lang.annotation.*; @Retention(RetentionPolicy.RUNTIME) public @interface Guard { String value(); }",
+        """
+        public class AccessRules {
+          boolean canPay(long id) { return limit() > id; }
+          long limit() { return 9; }
+          boolean canRead(long id) { return true; }
+        }""",
+        """
+        public class PayController {
+          Ledger l;
+          @Guard("@accessRules.canPay(#id)") void pay(long id) { l.post(id); }
+          @Guard("@accessRules.canRead(#id)") int size(long id) { return l.size(); }
+        }""");
+    assertEquals(Verdict.INFLUENCES, verdict(a, "AccessRules", "canPay"));
+    assertEquals(Verdict.INFLUENCES, verdict(a, "AccessRules", "limit"));
+    assertEquals(List.of("PayController.pay", "AccessRules.canPay"), witness(a, "AccessRules", "canPay"));
+    assertEquals(Verdict.ISOLATED, verdict(a, "AccessRules", "canRead"));
+  }
+
+  @Test
+  void filterThatHandsOnToTheChainCannotBeProvenClear() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        "package jakarta.servlet; public interface FilterChain { void doFilter(Object request, Object response); }",
+        """
+        public class AuditFilter {
+          void doFilter(Object req, Object res, jakarta.servlet.FilterChain chain) { note(); chain.doFilter(req, res); }
+          void note() {}
+          void describe() {}
+        }""",
+        "public class Checkout { Ledger l; void submit() { l.post(5); } }");
+    assertEquals(Verdict.UNPROVEN, verdict(a, "AuditFilter", "doFilter"));
+    assertEquals(Verdict.ISOLATED, verdict(a, "AuditFilter", "describe"));
+  }
 }

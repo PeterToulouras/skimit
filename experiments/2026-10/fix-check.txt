@@ -1,0 +1,72 @@
+== apollo
+68 replayed commits, 25 of them fixes, 7 fixing code on a critical path
+19 methods fixed on a critical path. Their previous change had been classified:
+  must review                                  19
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      0
+Counting methods a fix changed in any flagged code (48): 19 must, 12 should, 0 isolated, 17 with no earlier change
+== xxl-job
+195 replayed commits, 41 of them fixes, 16 fixing code on a critical path
+61 methods fixed on a critical path. Their previous change had been classified:
+  must review                                  33
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window     28
+Counting methods a fix changed in any flagged code (179): 33 must, 42 should, 0 isolated, 104 with no earlier change
+== litemall
+45 replayed commits, 17 of them fixes, 6 fixing code on a critical path
+14 methods fixed on a critical path. Their previous change had been classified:
+  must review                                   4
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window     10
+Counting methods a fix changed in any flagged code (16): 4 must, 2 should, 0 isolated, 10 with no earlier change
+== vhr
+20 replayed commits, 3 of them fixes, 1 fixing code on a critical path
+1 methods fixed on a critical path. Their previous change had been classified:
+  must review                                   1
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      0
+Counting methods a fix changed in any flagged code (2): 1 must, 0 should, 0 isolated, 1 with no earlier change
+== newbee-mall
+37 replayed commits, 15 of them fixes, 8 fixing code on a critical path
+10 methods fixed on a critical path. Their previous change had been classified:
+  must review                                   6
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      4
+Counting methods a fix changed in any flagged code (16): 6 must, 1 should, 0 isolated, 9 with no earlier change
+== spring-petclinic-rest
+78 replayed commits, 36 of them fixes, 7 fixing code on a critical path
+32 methods fixed on a critical path. Their previous change had been classified:
+  must review                                  29
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      3
+Counting methods a fix changed in any flagged code (69): 29 must, 34 should, 0 isolated, 6 with no earlier change
+== pc-full
+84 replayed commits, 13 of them fixes, 4 fixing code on a critical path
+4 methods fixed on a critical path. Their previous change had been classified:
+  must review                                   4
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      0
+Counting methods a fix changed in any flagged code (7): 4 must, 3 should, 0 isolated, 0 with no earlier change
+== spring-framework-petclinic
+26 replayed commits, 4 of them fixes, 1 fixing code on a critical path
+2 methods fixed on a critical path. Their previous change had been classified:
+  must review                                   0
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      2
+Counting methods a fix changed in any flagged code (5): 0 must, 1 should, 0 isolated, 4 with no earlier change
+== jpetstore-6
+22 replayed commits, 3 of them fixes, 0 fixing code on a critical path
+0 methods fixed on a critical path. Their previous change had been classified:
+  must review                                   0
+  should review                                 0
+  isolated (a miss)                             0
+  no earlier change in the replayed window      0
+Counting methods a fix changed in any flagged code (3): 0 must, 0 should, 0 isolated, 3 with no earlier change

@@ -1,0 +1,9 @@
+## Methods by verdict
+
+| Verdict | Methods | Share | Share by code size |
+|---|---:|---:|---:|
+| ON_PATH | 6 | 5.2% | 21.4% |
+| INFLUENCES | 67 | 57.8% | 44.9% |
+| UNPROVEN | 15 | 12.9% | 10.6% |
+| ISOLATED | 28 | 24.1% | 23.1% |
+

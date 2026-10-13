@@ -13,11 +13,12 @@
 #   SKIMIT_JAR   path to skimit.jar (default: the one built in this checkout)
 #   REPLAY_WORK  scratch directory (default: <git-repo>/../<name>-replay)
 #   REPLAY_TIMEOUT  seconds allowed per build (default 600)
+#   REPLAY_COMMITS  replay exactly these commits (space-separated) instead of the most recent ones
 #
 # Output: <work>/replay.jsonl, one line per commit; <work>/diffs/<sha>.json, the full manifest of
 # each commit (scripts/fix-check.py reads these); and a summary on stdout.
 set -uo pipefail
-[ $# -ge 2 ] || { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 repo="$(cd "$1" && pwd)"; policy="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2
 count=100
 if [ $# -gt 0 ] && [ "$1" != "--" ]; then count="$1"; shift; fi
@@ -25,7 +26,7 @@ if [ $# -gt 0 ] && [ "$1" != "--" ]; then count="$1"; shift; fi
 if [ $# -gt 0 ]; then build=("$@"); else
   build=(mvn -q -B -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true
          -Dspring-javaformat.skip=true -Dlicense.skip=true -Dformatter.skip=true -Dimpsort.skip=true
-         -Drewrite.skip=true compile)
+         -Drewrite.skip=true -Dmaven.gitcommitid.skip=true compile)
 fi
 here="$(cd "$(dirname "$0")/.." && pwd)"
 jar="${SKIMIT_JAR:-$here/skimit-analyzer/target/skimit.jar}"
@@ -54,7 +55,12 @@ classes_for() {
 }
 dirs_of() { find "$cache/$1" -mindepth 1 -maxdepth 1 -type d | sort; }
 
-for sha in $(git -C "$repo" log --no-merges -n "$count" --format=%H -- ':(glob)**/src/main/java/**'); do
+if [ -n "${REPLAY_COMMITS:-}" ]; then
+  commits="$(for c in $REPLAY_COMMITS; do git -C "$repo" rev-parse "$c"; done)"
+else
+  commits="$(git -C "$repo" log --no-merges -n "$count" --format=%H -- ':(glob)**/src/main/java/**')"
+fi
+for sha in $commits; do
   grep -q "\"$sha\"" "$out" && continue
   parent="$(git -C "$repo" rev-parse -q --verify "$sha^")" || continue
   date="$(git -C "$repo" show -s --format=%cs "$sha")"

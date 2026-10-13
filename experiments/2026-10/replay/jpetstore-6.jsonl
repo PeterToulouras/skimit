@@ -1,0 +1,43 @@
+{"sha": "5ce527c0f490c4c24e15ff579d2e059b4c2b79d2", "date": "2026-08-15", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "6c7a01073aeee3901dccb5f00175694b33888e30", "date": "2026-08-15", "must": 0, "should": 7, "isolated": 0, "policy": 0, "shape": 3}
+{"sha": "7afacd0306f3e1a585fb0da7d133356f897b289a", "date": "2026-08-15", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "d0eb10efec621573978b81def7fd07b46f722181", "date": "2026-08-15", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "ca400a434c772b894a6a5bebb7f1e035e468765d", "date": "2026-08-15", "must": 2, "should": 0, "isolated": 2, "policy": 0, "shape": 4}
+{"sha": "a77cc69110bfdf199d25ca93e348b3253c22968c", "date": "2026-08-15", "must": 1, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "1f191bce555c19954dbe5d5e854f87dfdae1fd2a", "date": "2026-08-15", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "20452e52105930dbab36dea346626ef4797ca54c", "date": "2026-08-10", "must": 0, "should": 3, "isolated": 0, "policy": 0, "shape": 1}
+{"sha": "53e4499d2d4e8eaac2a67285604e5f065c0ad889", "date": "2026-08-10", "must": 6, "should": 78, "isolated": 30, "policy": 0, "shape": 11}
+{"sha": "6c3cf660e568abf1670cb4060afc72eb8e718c7a", "date": "2026-08-09", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "6600698be916c6fa93cc02696a8cb8ccd6469474", "date": "2026-07-24", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "d2af960f187ab638babac8dc30df3a56f6859d2b", "date": "2026-07-24", "must": 0, "should": 1, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "4d070e17919a8e8cba372817b65ec5779a6db5c7", "date": "2026-07-24", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "e1a6eaa7a04ae159d92a01a2673272eb40d60217", "date": "2026-07-10", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "af6a8ab2169d03ab2122fe0eb0ce5a5945241a39", "date": "2026-07-08", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "5a81f2f790f07f227b7161cf28ced8ea878a998a", "date": "2026-01-25", "must": 0, "should": 3, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "fcc1dea8b533fac04c31531adb6a3dcb9bcc07b1", "date": "2023-08-26", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "0f4740a8a21305f7dfd828dce031181d50fd294b", "date": "2023-08-26", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "6140075181b71aabc20594f4a609910861c4e7bf", "date": "2022-08-21", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "ecf9ab509558eeade09d06aeb06499c62ec5fbb8", "date": "2022-08-21", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "020c47168d15183891586d1693e187019f99f1d8", "date": "2021-05-15", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "21f76817d776a4c26f783eac8a777da0dce3c77c", "date": "2020-09-20", "must": 0, "should": 0, "isolated": 0, "policy": 0, "shape": 0}
+{"sha": "97e7f8ba6abe0333737ad651a720a8b44c5d007e", "date": "2018-12-30", "skipped": "did not build"}
+{"sha": "bb5f350044dc48be4e0f5e109b414eb8e718278a", "date": "2018-12-30", "skipped": "did not build"}
+{"sha": "ce2480f2636e0e75f11a680fb56a5c296f6dee74", "date": "2018-12-29", "skipped": "did not build"}
+{"sha": "9abed3ac23b1a693c7789c9bfd5843f1cfdb0fc9", "date": "2018-12-29", "skipped": "did not build"}
+{"sha": "39611d22eb6c2a2b829f0a49be697f99aabab3e3", "date": "2018-12-27", "skipped": "did not build"}
+{"sha": "45ffac8682b60365211620488fc19aec3c2a7730", "date": "2017-05-22", "skipped": "did not build"}
+{"sha": "98290e0d3713fedb85eb2194d5b94e3c16cf37c5", "date": "2017-05-22", "skipped": "did not build"}
+{"sha": "0e802b0e4b51af0a4e5028434cdb4690c09c6c2d", "date": "2016-04-01", "skipped": "did not build"}
+{"sha": "60f6812822a48058119cddfcb666b96e6c8958f6", "date": "2016-04-01", "skipped": "did not build"}
+{"sha": "167e9ef8e2af78f7da4b9aeb7424863d22abf8b7", "date": "2016-03-15", "skipped": "did not build"}
+{"sha": "0f5b2d04daee7836c50fce5bfd0138c92d95696c", "date": "2015-10-11", "skipped": "did not build"}
+{"sha": "208029808f49bb1e7f04a9920f705cfd7d1f853b", "date": "2015-05-23", "skipped": "did not build"}
+{"sha": "78274618ae327e199ec80b912ae26195507b5907", "date": "2014-07-20", "skipped": "did not build"}
+{"sha": "40339c49c50edb7a444eedd51b262da36640a4bb", "date": "2013-05-26", "skipped": "did not build"}
+{"sha": "f0c64e21bc99c5d52420d7e3784a82a883350305", "date": "2012-03-17", "skipped": "did not build"}
+{"sha": "1a61bfe4cdf896abed6db7f6346be3bb082145c6", "date": "2011-03-05", "skipped": "did not build"}
+{"sha": "6c2ac14e081f42f95f3d344171fba8d358872697", "date": "2011-03-04", "skipped": "did not build"}
+{"sha": "ab36f0d7693a7b179deb8ad81e5efabd0f660e58", "date": "2011-03-04", "skipped": "did not build"}
+{"sha": "eb750eb00e75f932f358d86517f408bdc8908bd3", "date": "2011-01-01", "skipped": "did not build"}
+{"sha": "9dc193483d5e75263befcbe82157e581ac6a4f64", "date": "2011-01-01", "skipped": "did not build"}
+{"sha": "c65f94ace65b7473780aaee16642e06234e1a528", "date": "2010-12-27", "skipped": "did not build"}
