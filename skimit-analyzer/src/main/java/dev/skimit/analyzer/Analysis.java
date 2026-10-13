@@ -68,6 +68,8 @@ public final class Analysis {
   public final double rootRatio;
   /** Sink method to its domains. May include library methods named by policy rules. */
   public final Map<MethodKey, Set<String>> sinks = new TreeMap<>();
+  /** True when nothing declared a sink and the built-in rule (every data write) was used. */
+  public boolean usingDefaultSinks;
   public final Map<MethodKey, Verdict> verdicts = new TreeMap<>();
   public final Map<MethodKey, String> hashes = new TreeMap<>();
   /** Top-level class to its position and its number of transitive dependents. */
@@ -256,6 +258,15 @@ public final class Analysis {
       for (Policy.Rule r : policy.sinks) {
         if (r.matches(m.owner(), m.name())) addSink(m, Set.of(r.domain()));
       }
+    }
+    // Nothing declared: start from the built-in rule rather than report that all is clear.
+    if (sinks.isEmpty() && policy.sinks.isEmpty() && policy.defaultSinks) {
+      for (MethodKey m : candidates) {
+        for (Policy.Rule r : Policy.DEFAULT_SINKS) {
+          if (r.matches(m.owner(), m.name())) addSink(m, Set.of(r.domain()));
+        }
+      }
+      usingDefaultSinks = !sinks.isEmpty();
     }
     // An override of a sink is a sink: a call through the supertype may land on it.
     for (Map.Entry<MethodKey, Set<String>> e : new ArrayList<>(sinks.entrySet())) {

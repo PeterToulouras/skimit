@@ -51,6 +51,11 @@ public final class Policy {
   }
 
   public final List<Rule> sinks = new ArrayList<>();
+  /**
+   * Whether to fall back on {@link #DEFAULT_SINKS} when nothing declares a sink: no {@code sink}
+   * line here and no {@code @Critical} in the code.
+   */
+  public boolean defaultSinks = true;
   public final List<Rule> opaque = new ArrayList<>();
   public final List<Participant> participants = new ArrayList<>();
   /** Declared stores: the rule's domain is the store's name. */
@@ -72,6 +77,21 @@ public final class Policy {
     "software/amazon/awssdk/services/dynamodb/DynamoDbAsyncClient",
     "com/amazonaws/services/dynamodbv2/AmazonDynamoDB", "org/apache/ibatis/session/SqlSession",
   };
+
+  /**
+   * The sinks used when none are declared: every write through a repository, mapper or DAO. A
+   * blunt starting point that needs no setup; a project's own sinks are narrower and better.
+   */
+  static final List<Rule> DEFAULT_SINKS = new ArrayList<>();
+  static final String DEFAULT_SINK_DOMAIN = "DATA_WRITE";
+
+  static {
+    for (String type : new String[] {"*Repository", "*Mapper", "*Dao", "*DAO"}) {
+      for (String verb : new String[] {"save*", "insert*", "update*", "delete*", "remove*"}) {
+        DEFAULT_SINKS.add(rule(DEFAULT_SINK_DOMAIN, type + "#" + verb));
+      }
+    }
+  }
 
   private static final Pattern WRITE_VERB = Pattern.compile(
       "(save|insert|update|delete|remove|add|put|create|persist|merge|set|store|write|upsert|increment|decrement|clear|evict|flush|drop|truncate).*");

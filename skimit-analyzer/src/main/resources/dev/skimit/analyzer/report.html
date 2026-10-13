@@ -123,7 +123,7 @@ h3 { font-size: 14px; font-weight: 600; color: var(--muted); }
 .row .t.chg { border: 1px solid var(--muted); color: var(--fg); }
 .row.inchain { background: var(--select-bg); border-color: var(--select); }
 .row.sel { box-shadow: 0 0 0 2px var(--select); }
-.note { font-size: 14px; color: var(--muted); }
+.note { font-size: 14px; color: var(--muted); max-width: 72ch; }
 </style>
 </head>
 <body>
@@ -142,6 +142,7 @@ h3 { font-size: 14px; font-weight: 600; color: var(--muted); }
   <header class="answer">
     <h1 id="headline"></h1>
     <p class="sub" id="sub"></p>
+    <p class="note" id="defnote" hidden>No sinks are declared, so the built-in rule is in use: every write through a repository, mapper or DAO is critical. Declare your own with <span class="mono">--policy</span> or <span class="mono">@Critical</span>.</p>
     <div class="strip" id="strip" aria-hidden="true"></div>
   </header>
 
@@ -430,6 +431,7 @@ if (HAS_DIFF) { const first = DATA.diff.changes.find(c => c.bucket === "MUST" &&
 if (!selected) { const m = DATA.head.methods.find(x => x.verdict === "ON_PATH" && x.witness.length > 1); if (m) selected = m.method; }
 if (selected && !byId(selected) && DATA.base && byId(selected, "base")) mode = "base";
 $("versions").hidden = !HAS_DIFF;
+$("defnote").hidden = !DATA.head.defaultSinks;
 $("btn-base").addEventListener("click", () => { mode = "base"; refresh(); });
 $("btn-head").addEventListener("click", () => { mode = "head"; refresh(); });
 $("btn-relevant").addEventListener("click", () => { scope = "relevant"; refresh(); });

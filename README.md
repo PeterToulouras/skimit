@@ -12,8 +12,8 @@
 </p>
 
 **skimit tells you which parts of a Java change need a careful review, which can be skimmed, and
-proves it.** You list the few operations that are critical, in a file. It reads the compiled code
-and works out what each change can reach.
+proves it.** It compares the compiled code before and after, and works out whether each change
+can reach something critical.
 
 - **Deterministic.** No model scores the diff. The same commit always gets the same answer.
 - **Every verdict has a proof.** A flagged method comes with the chain of calls that connects it
@@ -33,27 +33,14 @@ report that has started moving money, and skimit says so.
 
 ## Quick start
 
-Download `skimit.jar` from the [latest release](https://github.com/PeterToulouras/skimit/releases/latest).
-It needs Java 17 or newer.
-
-**1. Say what is critical.** No code changes are needed: list it in a policy file. To start, use
-[data-writes.policy](examples/policies/data-writes.policy), which treats every database write as
-critical, then narrow it to what matters to you:
+Download `skimit.jar` from the [latest release](https://github.com/PeterToulouras/skimit/releases/latest)
+(Java 17 or newer), build your code before and after a change, and compare the two:
 
 ```
-sink MONEY com.acme.billing.Ledger#post*
-sink AUTH  com.acme.auth.Permissions#can*
+java -jar skimit.jar diff --base base/target/classes --head head/target/classes --html report.html
 ```
 
-If you would rather keep the marker next to the code, the optional `@Critical("MONEY")` annotation
-does the same thing.
-
-**2. Compare two builds:**
-
-```
-java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
-    --policy skimit.policy --html report.html
-```
+For the example pull request in this repository, it prints:
 
 ```
 7 methods changed: 1 must review, 3 should review, 3 isolated.
@@ -63,12 +50,35 @@ Must review: on a critical path
   - SalesReport.render(List) calls Ledger.post(String, long)
 ```
 
-**3. Check it on your own tests:**
+That is all a first run on your own code needs. No annotations, no configuration: out of the
+box, every write through a repository, mapper or DAO counts as critical.
+
+### Say what is critical for you
+
+The built-in rule is a starting point. Name the operations that matter in your system in a policy
+file, and it replaces the default:
 
 ```
-java -jar skimit.jar analyze target/classes --policy skimit.policy --agent-config agent.conf
+sink MONEY com.acme.billing.Ledger#post*
+sink AUTH  com.acme.auth.Permissions#can*
+```
+
+```
+java -jar skimit.jar diff --base ... --head ... --policy skimit.policy
+```
+
+If you would rather keep the marker next to the code, the optional `@Critical("MONEY")` annotation
+does the same thing.
+
+### Check it against your tests
+
+A verdict is a claim. This runs your tests with a recording agent and reports any method the
+analysis got wrong:
+
+```
+java -jar skimit.jar analyze target/classes --agent-config agent.conf
 mvn test "-DargLine=-javaagent:skimit-agent.jar=config=agent.conf,out=trace-%p.txt"
-java -jar skimit.jar verify target/classes --policy skimit.policy --trace trace-1234.txt
+java -jar skimit.jar verify target/classes --trace trace-1234.txt
 ```
 
 To try it without your own code, clone the repository, run `mvn package`, then `./examples/demo.sh`.

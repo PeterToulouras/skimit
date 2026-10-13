@@ -64,6 +64,12 @@ critical.
 
 ## Declaring what is critical
 
+With nothing declared, skimit uses a built-in rule: every write through a repository, mapper or
+DAO is critical (the same rule as [data-writes.policy](../examples/policies/data-writes.policy)).
+The output says when it is in use. Declaring any sink of your own replaces it, and
+`--no-default-sinks` turns it off.
+
+
 Either annotate the code (add the `skimit-annotations` jar, which has no dependencies):
 
 ```java

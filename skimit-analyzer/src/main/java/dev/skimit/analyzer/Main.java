@@ -18,7 +18,9 @@ public final class Main {
         skimit verify <classes-dir|jar>... --trace FILE [--policy FILE]
 
       Options:
-        --policy FILE     extra sinks and opaque calls (see README)
+        --policy FILE     your sinks, opaque calls and stores (see docs/usage.md)
+        --no-default-sinks  do not fall back on the built-in rule (every write through a
+                          repository, mapper or DAO is critical) when no sink is declared
         --root-ratio R    share of classes that must depend on a class to call it ROOT (default 0.10)
         --json FILE       also write the result as JSON
         --html FILE       also write an interactive map of the result as one HTML page
@@ -59,6 +61,7 @@ public final class Main {
     boolean list = false;
     boolean exitCode = false;
     boolean callsOnly = false;
+    boolean defaultSinks = true;
     for (int i = 1; i < args.length; i++) {
       switch (args[i]) {
         case "--base" -> current = base;
@@ -72,6 +75,7 @@ public final class Main {
         case "--list" -> list = true;
         case "--exit-code" -> exitCode = true;
         case "--calls-only" -> callsOnly = true;
+        case "--no-default-sinks" -> defaultSinks = false;
         default -> {
           if (args[i].startsWith("--")) throw new IllegalArgumentException("unknown option " + args[i]);
           current.add(Path.of(args[i]));
@@ -79,6 +83,7 @@ public final class Main {
       }
     }
     Policy policy = policyFile == null ? Policy.defaults() : Policy.load(policyFile);
+    policy.defaultSinks = defaultSinks;
     switch (args[0]) {
       case "analyze" -> {
         if (inputs.isEmpty()) throw new IllegalArgumentException("analyze needs at least one class directory or jar");
@@ -137,7 +142,7 @@ public final class Main {
   private static void warnIfNoSinks(Analysis a) {
     if (a.sinks.isEmpty()) {
       System.err.println("skimit: warning: no sinks found, so nothing is critical and every verdict is ISOLATED."
-          + " Annotate a method with @Critical or pass --policy.");
+          + " Declare one with --policy or @Critical.");
     }
   }
 

@@ -33,8 +33,11 @@ public final class Differ {
   public final List<String> shape = new ArrayList<>();
   /** Untouched methods that can now reach a sink because of something they call. */
   public final List<MethodKey> ripple = new ArrayList<>();
+  /** True when the changed code was judged by the built-in sinks because none were declared. */
+  public final boolean usingDefaultSinks;
 
   public Differ(Analysis base, Analysis head) {
+    usingDefaultSinks = head.usingDefaultSinks;
     for (MethodKey m : head.verdicts.keySet()) {
       boolean existed = base.verdicts.containsKey(m);
       boolean same = existed && base.hashes.get(m).equals(head.hashes.get(m));

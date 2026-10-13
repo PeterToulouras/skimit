@@ -351,4 +351,46 @@ class AnalysisTest {
     assertEquals(Verdict.UNPROVEN, verdict(a, "AuditFilter", "doFilter"));
     assertEquals(Verdict.ISOLATED, verdict(a, "AuditFilter", "describe"));
   }
+
+  static final String ORDERS = """
+      public interface OrderRepository { void save(Object o); Object findById(long id); }""";
+  static final String ORDER_SERVICE = """
+      public class OrderService {
+        OrderRepository orders;
+        void place(Object o) { orders.save(o); }
+        Object show(long id) { return orders.findById(id); }
+      }""";
+
+  @Test
+  void withNothingDeclaredDataWritesAreTheSinks() throws IOException {
+    Analysis a = Compiler.analyze(ORDERS, ORDER_SERVICE, "public class Banner { String text() { return \"hi\"; } }");
+    assertTrue(a.usingDefaultSinks);
+    assertEquals(Verdict.ON_PATH, verdict(a, "OrderService", "place"));
+    assertEquals(Set.of("DATA_WRITE"), a.domains(find(a, "OrderService", "place")));
+    assertEquals(Verdict.ISOLATED, verdict(a, "Banner", "text"));
+  }
+
+  @Test
+  void aDeclaredSinkReplacesTheBuiltInRule() throws IOException {
+    Analysis annotated = Compiler.analyze(LEDGER, ORDERS, ORDER_SERVICE);
+    assertTrue(!annotated.usingDefaultSinks);
+    assertTrue(annotated.sinks.keySet().stream().noneMatch(m -> m.owner().equals("OrderRepository")));
+
+    Policy policy = Policy.defaults();
+    policy.sinks.add(Policy.rule("READS", "OrderRepository#findById"));
+    Analysis byPolicy = Compiler.analyze(policy, ORDERS, ORDER_SERVICE);
+    assertTrue(!byPolicy.usingDefaultSinks);
+    assertEquals(Verdict.ON_PATH, verdict(byPolicy, "OrderService", "show"));
+    assertEquals(Set.of("READS"), byPolicy.domains(find(byPolicy, "OrderService", "show")));
+  }
+
+  @Test
+  void theBuiltInRuleCanBeTurnedOff() throws IOException {
+    Policy policy = Policy.defaults();
+    policy.defaultSinks = false;
+    Analysis a = Compiler.analyze(policy, ORDERS, ORDER_SERVICE);
+    assertTrue(!a.usingDefaultSinks);
+    assertTrue(a.sinks.isEmpty());
+    assertEquals(Verdict.ISOLATED, verdict(a, "OrderService", "place"));
+  }
 }

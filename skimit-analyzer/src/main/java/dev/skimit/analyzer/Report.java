@@ -17,8 +17,11 @@ import java.util.stream.Collectors;
 public final class Report {
   private Report() {}
 
+  static final String DEFAULT_NOTE = "No sinks are declared, so the built-in rule is in use: every write through a repository, mapper or DAO is critical. Declare your own with `@Critical` or `--policy`, or pass `--no-default-sinks` to turn this off.";
+
   public static String summary(Analysis a, boolean listMethods) {
     StringBuilder sb = new StringBuilder("# skimit analysis\n\n");
+    if (a.usingDefaultSinks) sb.append(DEFAULT_NOTE).append("\n\n");
     sb.append("## Sinks\n\n");
     if (a.sinks.isEmpty()) sb.append("None declared. Add `@Critical` or a policy file; without sinks nothing is critical.\n");
     for (Map.Entry<MethodKey, Set<String>> e : a.sinks.entrySet()) {
@@ -60,6 +63,7 @@ public final class Report {
     StringBuilder sb = new StringBuilder("# Review manifest\n\n");
     sb.append(d.changes.size()).append(" methods changed: **").append(d.count(Bucket.MUST)).append(" must review**, ")
         .append(d.count(Bucket.SHOULD)).append(" should review, ").append(d.count(Bucket.SKIP)).append(" isolated.\n");
+    if (d.usingDefaultSinks) sb.append("\n").append(DEFAULT_NOTE).append("\n");
     if (!d.policy.isEmpty()) {
       sb.append("\n## Policy changes (always reviewed)\n\n");
       for (String p : d.policy) sb.append("- ").append(p).append('\n');
@@ -150,7 +154,7 @@ public final class Report {
         edges.add("[" + str(from.id()) + "," + str(to.id()) + "]");
       }
     }
-    return "{\"sinks\":" + arr(a.sinks.keySet().stream().map(MethodKey::id).toList())
+    return "{\"defaultSinks\":" + a.usingDefaultSinks + ",\"sinks\":" + arr(a.sinks.keySet().stream().map(MethodKey::id).toList())
         + ",\"edges\":[" + String.join(",", edges) + "]"
         + ",\"classes\":[" + String.join(",", classes) + "],\"methods\":[" + String.join(",", methods) + "]}\n";
   }

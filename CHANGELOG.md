@@ -1,10 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
+- A first run needs no setup. When nothing declares a sink (no `sink` line in a policy file and no
+  `@Critical` in the code), every write through a repository, mapper or DAO is treated as critical,
+  and the output says the built-in rule is in use. Any sink you declare replaces it.
+  `--no-default-sinks` turns it off.
 - The README is a short overview; the reference material moved to `docs/usage.md`,
   `docs/how-it-works.md`, `docs/evidence.md` and `docs/limits.md`. The animated demo is replaced by
   sharp screenshots of the report.
+- `examples/policies/data-writes.policy` is the built-in rule as a file, to copy and narrow.
 
 ## 0.1.1
 

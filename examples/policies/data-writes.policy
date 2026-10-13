@@ -1,4 +1,4 @@
-# A starting point that needs no changes to your code:
+# The rule skimit uses when no sink is declared, as a file to copy and narrow:
 # every write through a repository, mapper or DAO is a critical sink.
 sink DATA_WRITE *Repository#save*
 sink DATA_WRITE *Repository#insert*
