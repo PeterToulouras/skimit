@@ -1,5 +1,7 @@
 # The rule skimit uses when no sink is declared, as a file to copy and narrow:
-# every write through a repository, mapper or DAO is a critical sink.
+# every data write is a critical sink, through your own repositories, mappers and DAOs
+# or straight through a common database or storage client.
+
 sink DATA_WRITE *Repository#save*
 sink DATA_WRITE *Repository#insert*
 sink DATA_WRITE *Repository#update*
@@ -20,3 +22,75 @@ sink DATA_WRITE *DAO#insert*
 sink DATA_WRITE *DAO#update*
 sink DATA_WRITE *DAO#delete*
 sink DATA_WRITE *DAO#remove*
+
+sink DATA_WRITE java.sql.*Statement#executeUpdate
+sink DATA_WRITE java.sql.*Statement#executeLargeUpdate
+sink DATA_WRITE java.sql.*Statement#executeBatch
+sink DATA_WRITE java.sql.*Statement#executeLargeBatch
+sink DATA_WRITE org.springframework.jdbc.core.*#update
+sink DATA_WRITE org.springframework.jdbc.core.*#batchUpdate
+sink DATA_WRITE org.springframework.jdbc.core.simple.SimpleJdbcInsert#execute*
+sink DATA_WRITE jakarta.persistence.EntityManager#persist
+sink DATA_WRITE jakarta.persistence.EntityManager#merge
+sink DATA_WRITE jakarta.persistence.EntityManager#remove
+sink DATA_WRITE javax.persistence.EntityManager#persist
+sink DATA_WRITE javax.persistence.EntityManager#merge
+sink DATA_WRITE javax.persistence.EntityManager#remove
+sink DATA_WRITE org.hibernate.*Session#save*
+sink DATA_WRITE org.hibernate.*Session#persist
+sink DATA_WRITE org.hibernate.*Session#update
+sink DATA_WRITE org.hibernate.*Session#merge
+sink DATA_WRITE org.hibernate.*Session#delete
+sink DATA_WRITE org.hibernate.*Session#remove
+sink DATA_WRITE org.apache.ibatis.session.SqlSession#insert
+sink DATA_WRITE org.apache.ibatis.session.SqlSession#update
+sink DATA_WRITE org.apache.ibatis.session.SqlSession#delete
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#save
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#insert*
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#update*
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#upsert
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#remove
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#findAndModify
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#findAndRemove
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#findAllAndRemove
+sink DATA_WRITE org.springframework.data.mongodb.core.*Mongo*#findAndReplace
+sink DATA_WRITE com.mongodb.*MongoCollection#insert*
+sink DATA_WRITE com.mongodb.*MongoCollection#update*
+sink DATA_WRITE com.mongodb.*MongoCollection#delete*
+sink DATA_WRITE com.mongodb.*MongoCollection#replace*
+sink DATA_WRITE com.mongodb.*MongoCollection#bulkWrite
+sink DATA_WRITE com.mongodb.*MongoCollection#findOneAndDelete
+sink DATA_WRITE com.mongodb.*MongoCollection#findOneAndReplace
+sink DATA_WRITE com.mongodb.*MongoCollection#findOneAndUpdate
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#putItem
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#updateItem
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#deleteItem
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#batchWriteItem
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#transactWriteItems
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#executeStatement
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#batchExecuteStatement
+sink DATA_WRITE software.amazon.awssdk.services.dynamodb.DynamoDb*Client#executeTransaction
+sink DATA_WRITE software.amazon.awssdk.enhanced.dynamodb.DynamoDb*#putItem
+sink DATA_WRITE software.amazon.awssdk.enhanced.dynamodb.DynamoDb*#updateItem
+sink DATA_WRITE software.amazon.awssdk.enhanced.dynamodb.DynamoDb*#deleteItem
+sink DATA_WRITE software.amazon.awssdk.enhanced.dynamodb.DynamoDb*#batchWriteItem
+sink DATA_WRITE software.amazon.awssdk.enhanced.dynamodb.DynamoDb*#transactWriteItems
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.AmazonDynamoDB*#putItem
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.AmazonDynamoDB*#updateItem
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.AmazonDynamoDB*#deleteItem
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.AmazonDynamoDB*#batchWriteItem
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.AmazonDynamoDB*#transactWriteItems
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper#save
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper#delete
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper#batchSave
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper#batchDelete
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper#batchWrite
+sink DATA_WRITE com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper#transactionWrite
+sink DATA_WRITE software.amazon.awssdk.services.s3.S3*Client#putObject
+sink DATA_WRITE software.amazon.awssdk.services.s3.S3*Client#deleteObject
+sink DATA_WRITE software.amazon.awssdk.services.s3.S3*Client#deleteObjects
+sink DATA_WRITE software.amazon.awssdk.services.s3.S3*Client#copyObject
+sink DATA_WRITE com.amazonaws.services.s3.AmazonS3*#putObject
+sink DATA_WRITE com.amazonaws.services.s3.AmazonS3*#deleteObject
+sink DATA_WRITE com.amazonaws.services.s3.AmazonS3*#deleteObjects
+sink DATA_WRITE com.amazonaws.services.s3.AmazonS3*#copyObject

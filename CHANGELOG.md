@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.3
+
+From a first run on a production codebase:
+
+- The built-in rule covers writes straight through common clients, not only repositories, mappers
+  and DAOs: JDBC, Spring's `JdbcTemplate`, JPA, Hibernate, MyBatis, MongoDB, DynamoDB and S3.
+  A codebase that writes through a raw `DynamoDbClient` used to get no sinks and an empty answer.
+- With no sink at all, every method is isolated and the manifest says so first. Before, methods
+  near a call the analysis cannot follow were still marked "cannot be proven clear", and the
+  warning claiming everything was isolated printed after the manifest.
+- A method that reaches several kinds of sink shows a proof for each, in the manifest, the JSON
+  (`proofs`) and the report. Before, only the shortest chain was shown, which might be the AUTH
+  one when the reviewer's question was about MONEY.
+- A static initializer reads as `Prices (static initializer)` instead of `Prices.<clinit>()`.
+- The HTML report stores each method id once: a large codebase's report is about a quarter of the
+  size (10 MB to 2.7 MB on Apollo).
+
 ## 0.1.2
 
 - A first run needs no setup. When nothing declares a sink (no `sink` line in a policy file and no

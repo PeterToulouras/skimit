@@ -124,6 +124,7 @@ h3 { font-size: 14px; font-weight: 600; color: var(--muted); }
 .row.inchain { background: var(--select-bg); border-color: var(--select); }
 .row.sel { box-shadow: 0 0 0 2px var(--select); }
 .note { font-size: 14px; color: var(--muted); max-width: 72ch; }
+.warn { font-size: 15px; font-weight: 500; max-width: 72ch; border-left: 4px solid var(--infl); padding: 6px 0 6px 12px; }
 </style>
 </head>
 <body>
@@ -142,7 +143,8 @@ h3 { font-size: 14px; font-weight: 600; color: var(--muted); }
   <header class="answer">
     <h1 id="headline"></h1>
     <p class="sub" id="sub"></p>
-    <p class="note" id="defnote" hidden>No sinks are declared, so the built-in rule is in use: every write through a repository, mapper or DAO is critical. Declare your own with <span class="mono">--policy</span> or <span class="mono">@Critical</span>.</p>
+    <p class="note" id="defnote" hidden>No sinks are declared, so the built-in rule is in use: every data write is critical (repositories, mappers, DAOs, and common clients such as JDBC, JPA, MyBatis, MongoDB, DynamoDB and S3). Declare your own with <span class="mono">--policy</span> or <span class="mono">@Critical</span>.</p>
+    <p class="warn" id="nosinks" hidden>No sinks found, so nothing is critical and every method is isolated. Nothing is declared, and the built-in rule matched nothing in this code. Declare what is critical with <span class="mono">--policy</span> or <span class="mono">@Critical</span>.</p>
     <div class="strip" id="strip" aria-hidden="true"></div>
   </header>
 
@@ -167,6 +169,18 @@ h3 { font-size: 14px; font-weight: 600; color: var(--muted); }
 
 <script>
 const DATA = __DATA__;
+// Method ids are stored once in DATA.ids and referred to by number; put the strings back.
+(function expand() {
+  const T = DATA.ids; if (!T) return;
+  const x = i => T[i], xs = a => a.map(x);
+  const proofs = o => { if (o.proofs) for (const d of Object.keys(o.proofs)) o.proofs[d] = xs(o.proofs[d]); };
+  for (const k of ["base", "head"]) {
+    const a = DATA[k]; if (!a) continue;
+    a.sinks = xs(a.sinks); a.edges = a.edges.map(e => [x(e[0]), x(e[1])]);
+    for (const m of a.methods) { m.method = x(m.method); m.class = m.method.slice(0, m.method.indexOf("#")); m.witness = xs(m.witness); proofs(m); }
+  }
+  if (DATA.diff) { DATA.diff.ripple = xs(DATA.diff.ripple); for (const c of DATA.diff.changes) { c.method = x(c.method); c.witness = xs(c.witness); proofs(c); } }
+})();
 const LABEL = { ON_PATH: "On path", INFLUENCES: "Influences", UNPROVEN: "Unproven", ISOLATED: "Isolated" };
 const BUCKETS = [
   ["MUST", "Must review", "ON_PATH", "These can reach something critical. Read them line by line."],
@@ -184,7 +198,12 @@ const short = name => name.slice(name.indexOf(".") + 1);
 const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 
 function current() { return DATA[mode] || DATA.head; }
-function byId(id, m) { return (DATA[m || mode] || DATA.head).methods.find(x => x.method === id); }
+const INDEX = new Map();
+function byId(id, m) {
+  const d = DATA[m || mode] || DATA.head;
+  if (!INDEX.has(d)) INDEX.set(d, new Map(d.methods.map(x => [x.method, x])));
+  return INDEX.get(d).get(id);
+}
 function nameOf(id) {
   const m = byId(id);
   if (m) return m.name;
@@ -344,17 +363,12 @@ function renderProof() {
   if (m.domains.length) v.append(el("span", "dom", "into " + m.domains.join(", ")));
   box.append(v, el("p", null, sentence(m.reason)));
   if (HAS_DIFF && mode === "base") box.append(el("p", "note", "Shown as it was before the change."));
-  if (m.witness.length > 1) {
-    box.append(el("h3", null, "The proof"));
-    const ol = el("ol", "chain");
-    m.witness.forEach((id, i) => {
-      if (i > 0) { const li = el("li"); li.append(el("span", "rail"), el("span", "via", m.links[i - 1])); ol.append(li); }
-      const li = el("li"), last = i === m.witness.length - 1, step = el("span", "step");
-      step.append(linkTo(id));
-      if (current().sinks.includes(id)) { const s = byId(id); step.append(el("span", "sinktag", "sink" + (s && s.domains.length ? " " + s.domains.join(" ") : ""))); }
-      li.append(el("span", "dot" + (last && current().sinks.includes(id) ? " end" : "")), step); ol.append(li);
-    });
-    box.append(ol);
+  // A method that reaches several kinds of sink gets one proof for each.
+  const domains = m.proofs ? Object.keys(m.proofs) : [];
+  if (domains.length > 1) {
+    for (const d of domains) { box.append(el("h3", null, "The proof into " + d)); box.append(chain(m.proofs[d], m.proofs[d].slice(1).map(() => "calls"))); }
+  } else if (m.witness.length > 1) {
+    box.append(el("h3", null, "The proof")); box.append(chain(m.witness, m.links));
   }
   const callers = current().edges.filter(e => e[1] === selected).map(e => e[0]);
   const callees = current().edges.filter(e => e[0] === selected && byId(e[1])).map(e => e[1]);
@@ -367,6 +381,18 @@ function renderProof() {
     cols.append(col);
   }
   if (cols.children.length) box.append(cols);
+}
+
+function chain(ids, links) {
+  const ol = el("ol", "chain"), sinks = current().sinks;
+  ids.forEach((id, i) => {
+    if (i > 0) { const li = el("li"); li.append(el("span", "rail"), el("span", "via", links[i - 1])); ol.append(li); }
+    const li = el("li"), last = i === ids.length - 1, step = el("span", "step");
+    step.append(linkTo(id));
+    if (sinks.includes(id)) { const s = byId(id); step.append(el("span", "sinktag", "sink" + (s && s.domains.length ? " " + s.domains.join(" ") : ""))); }
+    li.append(el("span", "dot" + (last && sinks.includes(id) ? " end" : "")), step); ol.append(li);
+  });
+  return ol;
 }
 
 function linkTo(id) {
@@ -432,6 +458,7 @@ if (!selected) { const m = DATA.head.methods.find(x => x.verdict === "ON_PATH" &
 if (selected && !byId(selected) && DATA.base && byId(selected, "base")) mode = "base";
 $("versions").hidden = !HAS_DIFF;
 $("defnote").hidden = !DATA.head.defaultSinks;
+$("nosinks").hidden = DATA.head.sinks.length > 0;
 $("btn-base").addEventListener("click", () => { mode = "base"; refresh(); });
 $("btn-head").addEventListener("click", () => { mode = "head"; refresh(); });
 $("btn-relevant").addEventListener("click", () => { scope = "relevant"; refresh(); });

@@ -51,7 +51,8 @@ Must review: on a critical path
 ```
 
 That is all a first run on your own code needs. No annotations, no configuration: out of the
-box, every write through a repository, mapper or DAO counts as critical.
+box, every data write counts as critical: through your repositories, mappers and DAOs, or
+straight through JDBC, JPA, MyBatis, MongoDB, DynamoDB or S3.
 
 ### Say what is critical for you
 

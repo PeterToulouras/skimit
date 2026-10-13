@@ -393,4 +393,52 @@ class AnalysisTest {
     assertTrue(a.sinks.isEmpty());
     assertEquals(Verdict.ISOLATED, verdict(a, "OrderService", "place"));
   }
+
+  @Test
+  void withNothingDeclaredWritesThroughACommonDatabaseClientAreSinks() throws IOException {
+    Analysis a = Compiler.analyze(
+        "package software.amazon.awssdk.services.dynamodb; public interface DynamoDbClient { Object putItem(Object r); Object getItem(Object r); }",
+        """
+        public class Payments {
+          software.amazon.awssdk.services.dynamodb.DynamoDbClient db;
+          void charge(Object r) { db.putItem(r); }
+          Object show(Object r) { return db.getItem(r); }
+        }""");
+    assertTrue(a.usingDefaultSinks);
+    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "charge"));
+    assertTrue(verdict(a, "Payments", "show") != Verdict.ON_PATH);
+  }
+
+  @Test
+  void withNoSinkAtAllEveryMethodIsIsolated() throws IOException {
+    Policy policy = Policy.defaults();
+    policy.defaultSinks = false;
+    Analysis a = Compiler.analyze(policy,
+        "public class Loader { Object load(String n) throws Exception { return Class.forName(n); } }");
+    assertTrue(a.sinks.isEmpty());
+    assertEquals(Verdict.ISOLATED, verdict(a, "Loader", "load"));
+  }
+
+  @Test
+  void aMethodThatReachesSeveralKindsOfSinkHasAProofForEach() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        "import dev.skimit.Critical; public class Signatures { @Critical(\"AUTH\") boolean check(String s) { return true; } }",
+        """
+        public class Webhook {
+          Signatures sig; Ledger ledger;
+          void handle(String body) { if (sig.check(body)) settle(5); }
+          void settle(long c) { ledger.post(c); }
+        }""");
+    java.util.Map<String, List<MethodKey>> proofs = a.proofs(find(a, "Webhook", "handle"));
+    assertEquals(Set.of("AUTH", "MONEY"), proofs.keySet());
+    assertEquals(List.of("Webhook.handle", "Webhook.settle", "Ledger.post"),
+        proofs.get("MONEY").stream().map(m -> m.owner() + "." + m.name()).toList());
+    assertEquals(List.of("Webhook.handle", "Signatures.check"),
+        proofs.get("AUTH").stream().map(m -> m.owner() + "." + m.name()).toList());
+  }
+
+  @Test
+  void aStaticInitializerIsNamedAsOne() {
+    assertEquals("Prices (static initializer)", new MethodKey("shop/Prices", "<clinit>", "()V").pretty());
+  }
 }

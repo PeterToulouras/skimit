@@ -24,7 +24,8 @@ public final class Differ {
       Set<String> newDomains,
       String reason,
       List<MethodKey> witness,
-      String explanation) {}
+      String explanation,
+      Map<String, List<MethodKey>> proofs) {}
 
   public final List<Change> changes = new ArrayList<>();
   /** Sinks added or removed. Changing what counts as critical is itself always reviewed. */
@@ -35,9 +36,12 @@ public final class Differ {
   public final List<MethodKey> ripple = new ArrayList<>();
   /** True when the changed code was judged by the built-in sinks because none were declared. */
   public final boolean usingDefaultSinks;
+  /** True when the code after the change has no sink at all, so nothing in it is critical. */
+  public final boolean noSinks;
 
   public Differ(Analysis base, Analysis head) {
     usingDefaultSinks = head.usingDefaultSinks;
+    noSinks = head.sinks.isEmpty();
     for (MethodKey m : head.verdicts.keySet()) {
       boolean existed = base.verdicts.containsKey(m);
       boolean same = existed && base.hashes.get(m).equals(head.hashes.get(m));
@@ -85,7 +89,7 @@ public final class Differ {
   private void add(MethodKey m, String kind, Bucket bucket, Analysis from, Set<String> newDomains, String reason) {
     Verdict v = from.verdict(m);
     changes.add(new Change(m, kind, bucket, v, v == Verdict.UNPROVEN ? Set.of() : from.domains(m), newDomains,
-        reason != null ? reason : from.reason(m), from.witness(m), from.explain(m)));
+        reason != null ? reason : from.reason(m), from.witness(m), from.explain(m), from.proofs(m)));
   }
 
   public long count(Bucket b) {

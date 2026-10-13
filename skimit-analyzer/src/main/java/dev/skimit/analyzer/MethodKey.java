@@ -12,6 +12,7 @@ public record MethodKey(String owner, String name, String desc) implements Compa
   /** Short human form, e.g. {@code Ledger.post(Money)}. */
   public String pretty() {
     StringBuilder sb = new StringBuilder(simple(owner.replace('/', '.')));
+    if (name.equals("<clinit>")) return sb.append(" (static initializer)").toString();
     String n = name;
     if (n.startsWith("lambda$")) {
       String[] parts = n.split("\\$");

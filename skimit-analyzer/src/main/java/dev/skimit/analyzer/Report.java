@@ -17,11 +17,17 @@ import java.util.stream.Collectors;
 public final class Report {
   private Report() {}
 
-  static final String DEFAULT_NOTE = "No sinks are declared, so the built-in rule is in use: every write through a repository, mapper or DAO is critical. Declare your own with `@Critical` or `--policy`, or pass `--no-default-sinks` to turn this off.";
+  static final String DEFAULT_NOTE = "No sinks are declared, so the built-in rule is in use: every data write is critical"
+      + " (repositories, mappers, DAOs, and common clients such as JDBC, JPA, MyBatis, MongoDB, DynamoDB and S3)."
+      + " Declare your own with `--policy` or `@Critical`, or pass `--no-default-sinks` to turn this off.";
+  static final String NO_SINKS_NOTE = "**No sinks found, so nothing is critical and every method is isolated.**"
+      + " Nothing is declared, and the built-in rule (data writes through repositories, mappers, DAOs and common"
+      + " database clients) matched nothing in this code. Declare what is critical with `--policy` or `@Critical`.";
 
   public static String summary(Analysis a, boolean listMethods) {
     StringBuilder sb = new StringBuilder("# skimit analysis\n\n");
     if (a.usingDefaultSinks) sb.append(DEFAULT_NOTE).append("\n\n");
+    if (a.sinks.isEmpty()) sb.append(NO_SINKS_NOTE).append("\n\n");
     sb.append("## Sinks\n\n");
     if (a.sinks.isEmpty()) sb.append("None declared. Add `@Critical` or a policy file; without sinks nothing is critical.\n");
     for (Map.Entry<MethodKey, Set<String>> e : a.sinks.entrySet()) {
@@ -61,6 +67,7 @@ public final class Report {
 
   public static String markdown(Differ d) {
     StringBuilder sb = new StringBuilder("# Review manifest\n\n");
+    if (d.noSinks) sb.append(NO_SINKS_NOTE).append("\n\n");
     sb.append(d.changes.size()).append(" methods changed: **").append(d.count(Bucket.MUST)).append(" must review**, ")
         .append(d.count(Bucket.SHOULD)).append(" should review, ").append(d.count(Bucket.SKIP)).append(" isolated.\n");
     if (d.usingDefaultSinks) sb.append("\n").append(DEFAULT_NOTE).append("\n");
@@ -94,7 +101,13 @@ public final class Report {
       if (!c.newDomains().isEmpty()) sb.append(" **NEW PATH into ").append(String.join(", ", c.newDomains())).append("**");
       if (bucket != Bucket.SKIP) {
         sb.append("\n  - ").append(c.reason());
-        if (!c.explanation().isEmpty()) sb.append("\n  - ").append(c.explanation());
+        if (c.proofs().size() > 1) {
+          for (Map.Entry<String, List<MethodKey>> p : c.proofs().entrySet()) {
+            sb.append("\n  - ").append(p.getKey()).append(": ").append(Analysis.explainCalls(p.getValue()));
+          }
+        } else if (!c.explanation().isEmpty()) {
+          sb.append("\n  - ").append(c.explanation());
+        }
       }
       sb.append('\n');
     }
@@ -113,35 +126,75 @@ public final class Report {
       if (in == null) throw new java.io.IOException("report template missing from the jar");
       template = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
     }
-    String data = "{\"base\":" + (base == null ? "null" : json(base).strip())
-        + ",\"head\":" + json(head).strip()
-        + ",\"diff\":" + (diff == null ? "null" : json(diff).strip()) + "}";
+    // Method ids are long and repeat in every edge and proof; the page stores each once and refers
+    // to it by number, which keeps a large codebase's report a few megabytes instead of tens.
+    Ids ids = new Ids();
+    String body = "\"base\":" + (base == null ? "null" : json(base, ids).strip())
+        + ",\"head\":" + json(head, ids).strip()
+        + ",\"diff\":" + (diff == null ? "null" : json(diff, ids).strip());
+    String data = "{\"ids\":" + arr(ids.table) + "," + body + "}";
     return template.replace("__DATA__", data.replace("</", "<\\/"));
+  }
+
+  /** Interns method ids for the HTML page; a null {@code Ids} writes them out in full. */
+  private static final class Ids {
+    final Map<String, Integer> index = new java.util.HashMap<>();
+    final List<String> table = new ArrayList<>();
+
+    String ref(String id) {
+      return String.valueOf(index.computeIfAbsent(id, k -> { table.add(k); return table.size() - 1; }));
+    }
+  }
+
+  private static String ref(Ids ids, MethodKey m) {
+    return ids == null ? str(m.id()) : ids.ref(m.id());
+  }
+
+  private static String refs(Ids ids, List<MethodKey> ms) {
+    return "[" + ms.stream().map(m -> ref(ids, m)).collect(Collectors.joining(",")) + "]";
+  }
+
+  /** Every domain's proof, written only when there is more than one; otherwise the witness says it all. */
+  private static String proofs(Ids ids, Map<String, List<MethodKey>> proofs) {
+    if (proofs.size() < 2) return "";
+    return ",\"proofs\":{" + proofs.entrySet().stream().map(e -> str(e.getKey()) + ":" + refs(ids, e.getValue()))
+        .collect(Collectors.joining(",")) + "}";
   }
 
   // ---- JSON -----------------------------------------------------------------------------------
 
   public static String json(Differ d) {
+    return json(d, null);
+  }
+
+  private static String json(Differ d, Ids ids) {
     List<String> changes = new ArrayList<>();
     for (Change c : d.changes) {
-      changes.add("{" + kv("method", c.method().id()) + "," + kv("kind", c.kind()) + "," + kv("bucket", c.bucket().name())
+      changes.add("{\"method\":" + ref(ids, c.method()) + "," + kv("kind", c.kind()) + "," + kv("bucket", c.bucket().name())
           + "," + kv("verdict", c.verdict().name()) + ",\"domains\":" + arr(c.domains()) + ",\"newDomains\":" + arr(c.newDomains())
-          + "," + kv("reason", c.reason()) + "," + kv("name", c.method().pretty()) + ",\"witness\":" + arr(c.witness().stream().map(MethodKey::id).toList()) + "}");
+          + "," + kv("reason", c.reason()) + "," + kv("name", c.method().pretty())
+          + ",\"witness\":" + refs(ids, c.witness()) + proofs(ids, c.proofs()) + "}");
     }
     return "{\"mustReview\":" + d.count(Bucket.MUST) + ",\"shouldReview\":" + d.count(Bucket.SHOULD)
-        + ",\"isolated\":" + d.count(Bucket.SKIP) + ",\"policy\":" + arr(d.policy) + ",\"shape\":" + arr(d.shape)
-        + ",\"ripple\":" + arr(d.ripple.stream().map(MethodKey::id).toList())
+        + ",\"isolated\":" + d.count(Bucket.SKIP) + ",\"noSinks\":" + d.noSinks + ",\"defaultSinks\":" + d.usingDefaultSinks
+        + ",\"policy\":" + arr(d.policy) + ",\"shape\":" + arr(d.shape)
+        + ",\"ripple\":" + refs(ids, d.ripple)
         + ",\"changes\":[" + String.join(",", changes) + "]}\n";
   }
 
   public static String json(Analysis a) {
+    return json(a, null);
+  }
+
+  private static String json(Analysis a, Ids ids) {
     List<String> methods = new ArrayList<>();
     for (Map.Entry<MethodKey, Verdict> e : a.verdicts.entrySet()) {
-      methods.add("{" + kv("method", e.getKey().id()) + "," + kv("name", e.getKey().pretty())
-          + "," + kv("class", e.getKey().owner().replace('/', '.')) + "," + kv("reason", a.reason(e.getKey()))
-          + ",\"links\":" + arr(a.links(e.getKey())) + "," + kv("verdict", e.getValue().name())
-          + "," + kv("hash", a.hashes.get(e.getKey())) + ",\"domains\":" + arr(a.domains(e.getKey()))
-          + ",\"witness\":" + arr(a.witness(e.getKey()).stream().map(MethodKey::id).toList()) + "}");
+      MethodKey m = e.getKey();
+      // The page derives the class from the id and has no use for the hash.
+      String extra = ids != null ? "" : "," + kv("class", m.owner().replace('/', '.')) + "," + kv("hash", a.hashes.get(m));
+      methods.add("{\"method\":" + ref(ids, m) + "," + kv("name", m.pretty()) + extra + "," + kv("reason", a.reason(m))
+          + ",\"links\":" + arr(a.links(m)) + "," + kv("verdict", e.getValue().name())
+          + ",\"domains\":" + arr(a.domains(m)) + ",\"witness\":" + refs(ids, a.witness(m)) + proofs(ids, a.proofs(m)) + "}");
     }
     List<String> classes = new ArrayList<>();
     for (Map.Entry<String, Position> e : a.positions.entrySet()) {
@@ -151,10 +204,10 @@ public final class Report {
     List<String> edges = new ArrayList<>();
     for (MethodKey from : a.verdicts.keySet()) {
       for (MethodKey to : a.graph.calleesOf(from)) {
-        edges.add("[" + str(from.id()) + "," + str(to.id()) + "]");
+        edges.add("[" + ref(ids, from) + "," + ref(ids, to) + "]");
       }
     }
-    return "{\"defaultSinks\":" + a.usingDefaultSinks + ",\"sinks\":" + arr(a.sinks.keySet().stream().map(MethodKey::id).toList())
+    return "{\"defaultSinks\":" + a.usingDefaultSinks + ",\"sinks\":" + refs(ids, new ArrayList<>(a.sinks.keySet()))
         + ",\"edges\":[" + String.join(",", edges) + "]"
         + ",\"classes\":[" + String.join(",", classes) + "],\"methods\":[" + String.join(",", methods) + "]}\n";
   }

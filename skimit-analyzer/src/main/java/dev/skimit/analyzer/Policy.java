@@ -79,17 +79,46 @@ public final class Policy {
   };
 
   /**
-   * The sinks used when none are declared: every write through a repository, mapper or DAO. A
+   * The sinks used when none are declared: every data write, whether through the project's own
+   * repositories, mappers and DAOs or straight through a common database or storage client. A
    * blunt starting point that needs no setup; a project's own sinks are narrower and better.
    */
   static final List<Rule> DEFAULT_SINKS = new ArrayList<>();
   static final String DEFAULT_SINK_DOMAIN = "DATA_WRITE";
+
+  /** Raw clients, as {owner glob, method globs...}. Reads, queries and plain execute() are left out. */
+  private static final String[][] DEFAULT_CLIENT_WRITES = {
+    {"java.sql.*Statement", "executeUpdate", "executeLargeUpdate", "executeBatch", "executeLargeBatch"},
+    {"org.springframework.jdbc.core.*", "update", "batchUpdate"},
+    {"org.springframework.jdbc.core.simple.SimpleJdbcInsert", "execute*"},
+    {"jakarta.persistence.EntityManager", "persist", "merge", "remove"},
+    {"javax.persistence.EntityManager", "persist", "merge", "remove"},
+    {"org.hibernate.*Session", "save*", "persist", "update", "merge", "delete", "remove"},
+    {"org.apache.ibatis.session.SqlSession", "insert", "update", "delete"},
+    {"org.springframework.data.mongodb.core.*Mongo*", "save", "insert*", "update*", "upsert", "remove",
+        "findAndModify", "findAndRemove", "findAllAndRemove", "findAndReplace"},
+    {"com.mongodb.*MongoCollection", "insert*", "update*", "delete*", "replace*", "bulkWrite", "findOneAndDelete",
+        "findOneAndReplace", "findOneAndUpdate"},
+    {"software.amazon.awssdk.services.dynamodb.DynamoDb*Client", "putItem", "updateItem", "deleteItem",
+        "batchWriteItem", "transactWriteItems", "executeStatement", "batchExecuteStatement", "executeTransaction"},
+    {"software.amazon.awssdk.enhanced.dynamodb.DynamoDb*", "putItem", "updateItem", "deleteItem",
+        "batchWriteItem", "transactWriteItems"},
+    {"com.amazonaws.services.dynamodbv2.AmazonDynamoDB*", "putItem", "updateItem", "deleteItem",
+        "batchWriteItem", "transactWriteItems"},
+    {"com.amazonaws.services.dynamodbv2.datamodeling.DynamoDB*Mapper", "save", "delete", "batchSave",
+        "batchDelete", "batchWrite", "transactionWrite"},
+    {"software.amazon.awssdk.services.s3.S3*Client", "putObject", "deleteObject", "deleteObjects", "copyObject"},
+    {"com.amazonaws.services.s3.AmazonS3*", "putObject", "deleteObject", "deleteObjects", "copyObject"},
+  };
 
   static {
     for (String type : new String[] {"*Repository", "*Mapper", "*Dao", "*DAO"}) {
       for (String verb : new String[] {"save*", "insert*", "update*", "delete*", "remove*"}) {
         DEFAULT_SINKS.add(rule(DEFAULT_SINK_DOMAIN, type + "#" + verb));
       }
+    }
+    for (String[] client : DEFAULT_CLIENT_WRITES) {
+      for (int i = 1; i < client.length; i++) DEFAULT_SINKS.add(rule(DEFAULT_SINK_DOMAIN, client[0] + "#" + client[i]));
     }
   }
 

@@ -141,6 +141,39 @@ public final class Analysis {
     return path(m).stream().map(Node::method).toList();
   }
 
+  /**
+   * One proof per domain for a method on a critical path: the chain from the method to a sink of
+   * that domain. A method that reaches several kinds of sink (AUTH, MONEY) gets a chain for each,
+   * since the reviewer's question is usually about the highest-stakes one. Empty for other verdicts.
+   */
+  public Map<String, List<MethodKey>> proofs(MethodKey m) {
+    Map<String, List<MethodKey>> out = new java.util.LinkedHashMap<>();
+    if (verdict(m) != Verdict.ON_PATH) return out;
+    List<Node> nodes = new ArrayList<>();
+    Node chosenNode = chosen.get(m);
+    if (chosenNode != null) nodes.add(chosenNode);
+    nodes.addAll(graph.nodesOf.getOrDefault(m, List.of()));
+    for (Map.Entry<String, Map<Node, Node>> e : towardSink.entrySet()) {
+      Map<Node, Node> next = e.getValue();
+      for (Node n : nodes) {
+        if (!next.containsKey(n)) continue;
+        List<MethodKey> chain = new ArrayList<>();
+        for (Node c = n; c != null; c = next.get(c)) chain.add(c.method());
+        out.put(e.getKey(), chain);
+        break;
+      }
+    }
+    return out;
+  }
+
+  /** A chain of calls as a sentence. */
+  public static String explainCalls(List<MethodKey> chain) {
+    if (chain.size() < 2) return "";
+    StringBuilder sb = new StringBuilder("`" + chain.get(0).pretty() + "`");
+    for (int i = 1; i < chain.size(); i++) sb.append(" calls `").append(chain.get(i).pretty()).append('`');
+    return sb.toString();
+  }
+
   /** For each step of the witness after the first, the words that connect it to the previous step. */
   public List<String> links(MethodKey m) {
     List<Node> path = path(m);
@@ -396,8 +429,11 @@ public final class Analysis {
       }
     }
 
+    // With nothing critical there is nothing a hidden call could lead to: every method is isolated.
+    boolean anySink = !sinks.isEmpty();
+
     // 3. Backward from opaque calls.
-    work = new ArrayDeque<>(graph.opaqueCalls.keySet());
+    work = new ArrayDeque<>(anySink ? graph.opaqueCalls.keySet() : Set.<Node>of());
     for (Node n : work) towardOpaque.put(n, null);
     while (!work.isEmpty()) {
       Node n = work.poll();
@@ -414,45 +450,47 @@ public final class Analysis {
     //    components): a framework builds them and calls them, possibly in the middle of a
     //    critical flow.
     work = new ArrayDeque<>();
-    for (String cls : graph.program.classes.keySet()) {
-      if (graph.instantiated.contains(cls) && !graph.managed(cls)) continue;
-      String receiver = graph.concrete(cls) ? cls : null;
-      Node first = null;
-      for (MethodKey cb : graph.shape(cls).callbacks()) {
-        if (receiver == null && !cb.owner().equals(cls)) continue;
-        Node n = new Node(cb, receiver);
-        if (!graph.nodesOf.getOrDefault(cb, List.of()).contains(n) || frameworkInvoked.containsKey(n)) continue;
-        // An entry point that is itself on a critical path is already accounted for: the
-        // analysis has followed it, and what it calls is judged by the influence rules.
-        if (onPath.contains(n)) continue;
-        frameworkInvoked.put(n, null);
-        work.add(n);
-        if (first == null) first = n;
-      }
-      if (first == null) continue;
-      // Its constructors set up the state those callbacks run on.
-      for (MethodNode mn : graph.program.classes.get(cls).methods) {
-        Node init = new Node(new MethodKey(cls, mn.name, mn.desc), mn.name.equals("<init>") ? receiver : null);
-        if (mn.name.startsWith("<") && !frameworkInvoked.containsKey(init) && !onPath.contains(init)) {
-          frameworkInvoked.put(init, first);
-          work.add(init);
+    if (anySink) {
+      for (String cls : graph.program.classes.keySet()) {
+        if (graph.instantiated.contains(cls) && !graph.managed(cls)) continue;
+        String receiver = graph.concrete(cls) ? cls : null;
+        Node first = null;
+        for (MethodKey cb : graph.shape(cls).callbacks()) {
+          if (receiver == null && !cb.owner().equals(cls)) continue;
+          Node n = new Node(cb, receiver);
+          if (!graph.nodesOf.getOrDefault(cb, List.of()).contains(n) || frameworkInvoked.containsKey(n)) continue;
+          // An entry point that is itself on a critical path is already accounted for: the
+          // analysis has followed it, and what it calls is judged by the influence rules.
+          if (onPath.contains(n)) continue;
+          frameworkInvoked.put(n, null);
+          work.add(n);
+          if (first == null) first = n;
+        }
+        if (first == null) continue;
+        // Its constructors set up the state those callbacks run on.
+        for (MethodNode mn : graph.program.classes.get(cls).methods) {
+          Node init = new Node(new MethodKey(cls, mn.name, mn.desc), mn.name.equals("<init>") ? receiver : null);
+          if (mn.name.startsWith("<") && !frameworkInvoked.containsKey(init) && !onPath.contains(init)) {
+            frameworkInvoked.put(init, first);
+            work.add(init);
+          }
         }
       }
-    }
-    for (Map.Entry<MethodKey, String> e : graph.globalParticipants.entrySet()) {
-      for (Node n : graph.nodesOf.getOrDefault(e.getKey(), List.of())) {
-        if (frameworkInvoked.containsKey(n) || onPath.contains(n)) continue;
-        frameworkInvoked.put(n, null);
-        calledBecause.put(n, e.getValue());
-        work.add(n);
-        // The framework also builds the object those methods run on.
-        String cls = e.getKey().owner();
-        for (MethodNode mn : graph.program.classes.get(cls).methods) {
-          if (!mn.name.startsWith("<")) continue;
-          for (Node init : graph.nodesOf.getOrDefault(new MethodKey(cls, mn.name, mn.desc), List.of())) {
-            if (!frameworkInvoked.containsKey(init) && !onPath.contains(init)) {
-              frameworkInvoked.put(init, n);
-              work.add(init);
+      for (Map.Entry<MethodKey, String> e : graph.globalParticipants.entrySet()) {
+        for (Node n : graph.nodesOf.getOrDefault(e.getKey(), List.of())) {
+          if (frameworkInvoked.containsKey(n) || onPath.contains(n)) continue;
+          frameworkInvoked.put(n, null);
+          calledBecause.put(n, e.getValue());
+          work.add(n);
+          // The framework also builds the object those methods run on.
+          String cls = e.getKey().owner();
+          for (MethodNode mn : graph.program.classes.get(cls).methods) {
+            if (!mn.name.startsWith("<")) continue;
+            for (Node init : graph.nodesOf.getOrDefault(new MethodKey(cls, mn.name, mn.desc), List.of())) {
+              if (!frameworkInvoked.containsKey(init) && !onPath.contains(init)) {
+                frameworkInvoked.put(init, n);
+                work.add(init);
+              }
             }
           }
         }

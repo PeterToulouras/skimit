@@ -88,19 +88,19 @@ public final class Main {
       case "analyze" -> {
         if (inputs.isEmpty()) throw new IllegalArgumentException("analyze needs at least one class directory or jar");
         Analysis a = new Analysis(Program.load(inputs), policy, rootRatio, callsOnly);
+        warnIfNoSinks(a);
         System.out.print(Report.summary(a, list));
         if (json != null) Files.writeString(json, Report.json(a));
         if (html != null) Files.writeString(html, Report.html(null, a, null));
         if (agentConfig != null) Files.writeString(agentConfig, agentConfig(a));
-        warnIfNoSinks(a);
         return 0;
       }
       case "verify" -> {
         if (inputs.isEmpty() || traces.isEmpty()) throw new IllegalArgumentException("verify needs classes and --trace FILE");
         Analysis a = new Analysis(Program.load(inputs), policy, rootRatio, callsOnly);
+        warnIfNoSinks(a);
         Verifier v = new Verifier(a, traces);
         System.out.print(v.report());
-        warnIfNoSinks(a);
         return v.misses.isEmpty() && v.hits > 0 ? 0 : 1;
       }
       case "diff" -> {
@@ -108,10 +108,10 @@ public final class Main {
         Analysis before = new Analysis(Program.load(base), policy, rootRatio, callsOnly);
         Analysis after = new Analysis(Program.load(head), policy, rootRatio, callsOnly);
         Differ d = new Differ(before, after);
+        warnIfNoSinks(after);
         System.out.print(Report.markdown(d));
         if (json != null) Files.writeString(json, Report.json(d));
         if (html != null) Files.writeString(html, Report.html(before, after, d));
-        warnIfNoSinks(after);
         return exitCode && (d.count(Bucket.MUST) > 0 || !d.policy.isEmpty()) ? 1 : 0;
       }
       default -> throw new IllegalArgumentException("unknown command " + args[0] + " (try --help)");
@@ -141,8 +141,8 @@ public final class Main {
   /** Without sinks every method is isolated, which reads as "all clear" and means nothing. */
   private static void warnIfNoSinks(Analysis a) {
     if (a.sinks.isEmpty()) {
-      System.err.println("skimit: warning: no sinks found, so nothing is critical and every verdict is ISOLATED."
-          + " Declare one with --policy or @Critical.");
+      System.err.println("skimit: warning: no sinks found, so nothing is critical and every method is isolated."
+          + " Declare what is critical with --policy or @Critical.");
     }
   }
 

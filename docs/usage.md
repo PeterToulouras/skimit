@@ -64,8 +64,11 @@ critical.
 
 ## Declaring what is critical
 
-With nothing declared, skimit uses a built-in rule: every write through a repository, mapper or
-DAO is critical (the same rule as [data-writes.policy](../examples/policies/data-writes.policy)).
+With nothing declared, skimit uses a built-in rule: every data write is critical, whether it goes
+through your own repositories, mappers and DAOs or straight through a common client (JDBC, Spring's
+`JdbcTemplate`, JPA, Hibernate, MyBatis, MongoDB, DynamoDB, S3). The full list is
+[data-writes.policy](../examples/policies/data-writes.policy). Reads, queries and plain JDBC
+`execute()` are not included.
 The output says when it is in use. Declaring any sink of your own replaces it, and
 `--no-default-sinks` turns it off.
 
