@@ -100,8 +100,9 @@ Tested on 575 real commits from nine open-source projects, 21 security fixes, an
 with one fixed rule: every database write is critical.
 
 - **33% of commits needed no body review**, and 39% touched a critical path.
-- **Of 18 security fixes, 12 were flagged must review.** Four were called isolated: all in
-  read-only code, which that rule does not cover.
+- **Of 21 security fixes, 18 still build: 12 must review, 1 should review, 4 isolated, 1 in a
+  module that was not analysed.** The four isolated ones are all in read-only code, which that rule
+  does not cover.
 - **The runtime check found 15 wrong verdicts** in a project skimit had never seen. They are fixed
   in 0.1.1.
 

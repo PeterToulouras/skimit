@@ -45,8 +45,9 @@ closed before release. Expect a framework skimit has not met to add to the list,
   one.
 - **Fixes in isolated code.** 30 of the 157 fix commits changed only isolated methods. Isolated
   means "cannot affect what the sinks are asked to do", not "cannot contain a bug".
-- **Security fixes.** Of 18 real vulnerability fixes that still build, 12 were must review, 1
-  should review, and 4 isolated. All four are in code that only reads, which a writes-only rule
+- **Security fixes.** 21 real vulnerability fixes were picked; 3 no longer build. Of the 18: 12
+  were must review, 1 should review, 4 isolated, and 1 (CVE-2025-7787) changed only a sample module
+  outside the analysed code. All four isolated ones are in code that only reads, which a writes-only rule
   does not treat as critical: if reading something is sensitive, declare the read as a sink. One fix exposed
   a gap, now closed: a permission check called from a `@PreAuthorize` expression string.
 
