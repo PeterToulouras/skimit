@@ -1,0 +1,22 @@
+# A starting point that needs no changes to your code:
+# every write through a repository, mapper or DAO is a critical sink.
+sink DATA_WRITE *Repository#save*
+sink DATA_WRITE *Repository#insert*
+sink DATA_WRITE *Repository#update*
+sink DATA_WRITE *Repository#delete*
+sink DATA_WRITE *Repository#remove*
+sink DATA_WRITE *Mapper#save*
+sink DATA_WRITE *Mapper#insert*
+sink DATA_WRITE *Mapper#update*
+sink DATA_WRITE *Mapper#delete*
+sink DATA_WRITE *Mapper#remove*
+sink DATA_WRITE *Dao#save*
+sink DATA_WRITE *Dao#insert*
+sink DATA_WRITE *Dao#update*
+sink DATA_WRITE *Dao#delete*
+sink DATA_WRITE *Dao#remove*
+sink DATA_WRITE *DAO#save*
+sink DATA_WRITE *DAO#insert*
+sink DATA_WRITE *DAO#update*
+sink DATA_WRITE *DAO#delete*
+sink DATA_WRITE *DAO#remove*

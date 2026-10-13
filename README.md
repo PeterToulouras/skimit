@@ -12,8 +12,8 @@
 </p>
 
 **skimit tells you which parts of a Java change need a careful review, which can be skimmed, and
-proves it.** You mark what is critical. It reads the compiled code and works out what each change
-can reach.
+proves it.** You list the few operations that are critical, in a file. It reads the compiled code
+and works out what each change can reach.
 
 - **Deterministic.** No model scores the diff. The same commit always gets the same answer.
 - **Every verdict has a proof.** A flagged method comes with the chain of calls that connects it
@@ -36,21 +36,23 @@ report that has started moving money, and skimit says so.
 Download `skimit.jar` from the [latest release](https://github.com/PeterToulouras/skimit/releases/latest).
 It needs Java 17 or newer.
 
-**1. Mark what is critical**, in the code or in a policy file:
-
-```java
-@Critical("MONEY")
-public void post(String account, long cents) { ... }
-```
+**1. Say what is critical.** No code changes are needed: list it in a policy file. To start, use
+[data-writes.policy](examples/policies/data-writes.policy), which treats every database write as
+critical, then narrow it to what matters to you:
 
 ```
 sink MONEY com.acme.billing.Ledger#post*
+sink AUTH  com.acme.auth.Permissions#can*
 ```
+
+If you would rather keep the marker next to the code, the optional `@Critical("MONEY")` annotation
+does the same thing.
 
 **2. Compare two builds:**
 
 ```
-java -jar skimit.jar diff --base base/target/classes --head head/target/classes --html report.html
+java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
+    --policy skimit.policy --html report.html
 ```
 
 ```
@@ -64,9 +66,9 @@ Must review: on a critical path
 **3. Check it on your own tests:**
 
 ```
-java -jar skimit.jar analyze target/classes --agent-config agent.conf
+java -jar skimit.jar analyze target/classes --policy skimit.policy --agent-config agent.conf
 mvn test "-DargLine=-javaagent:skimit-agent.jar=config=agent.conf,out=trace-%p.txt"
-java -jar skimit.jar verify target/classes --trace trace-1234.txt
+java -jar skimit.jar verify target/classes --policy skimit.policy --trace trace-1234.txt
 ```
 
 To try it without your own code, clone the repository, run `mvn package`, then `./examples/demo.sh`.
