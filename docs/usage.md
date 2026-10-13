@@ -1,0 +1,96 @@
+# Using skimit
+
+## Run it
+
+Download `skimit.jar` from the [latest release](https://github.com/PeterToulouras/skimit/releases/latest)
+(Java 17 or newer), or build it: `mvn package` puts it in `skimit-analyzer/target`, and
+`./examples/demo.sh` then runs the whole thing on the example app.
+
+On your own code:
+
+```
+# what is critical, and how much of the codebase is connected to it
+java -jar skimit.jar analyze path/to/classes --list
+
+# what a change needs: build the base and the head, then compare them
+java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
+    --json manifest.json --exit-code
+```
+
+Add `--html report.html` to either command for the interactive report: what to review and why, the proof
+for whichever method you select, and a map of every class coloured by verdict.
+It is one self-contained file, so a CI job can attach it to the build.
+
+Inputs are class directories or jars, as many as you like. `--exit-code` returns 1 when anything
+lands in "must review" or a sink declaration changed, so a CI job can turn the result into a
+required check.
+
+### Check the verdicts on your own code
+
+A static verdict is a claim. `skimit verify` tests it against what your program really does: run
+your tests (or the application) with the recording agent, then compare.
+
+```
+java -jar skimit.jar analyze target/classes --policy your.policy --agent-config agent.conf
+mvn test "-DargLine=-javaagent:skimit-agent.jar=config=agent.conf,out=trace-%p.txt"
+java -jar skimit.jar verify target/classes --policy your.policy --trace trace-1234.txt
+```
+
+The agent notes every flow that reaches a sink: which methods were on the call stack at that
+moment, and which had already run in the same flow (one request, when a servlet dispatch is
+involved). `verify` fails if any of them is marked `ISOLATED`, or was on the stack without being
+`ON_PATH`. A clean result covers what the run exercised and no more, so the better your tests
+reach the critical code, the more it is worth.
+
+## In CI
+
+A sketch for GitHub Actions; adjust the build commands to your project. It builds the pull
+request and its base, then writes the manifest to the job summary.
+
+```yaml
+- uses: actions/checkout@v4
+  with: { path: head }
+- uses: actions/checkout@v4
+  with: { path: base, ref: ${{ github.event.pull_request.base.sha }} }
+- run: mvn -q -f head/pom.xml -DskipTests package
+- run: mvn -q -f base/pom.xml -DskipTests package
+- run: |
+    java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
+        --policy head/skimit.policy >> "$GITHUB_STEP_SUMMARY"
+```
+
+Keep the policy file under code-owner review: whoever can edit it decides what counts as
+critical.
+
+## Declaring what is critical
+
+Either annotate the code (add the `skimit-annotations` jar, which has no dependencies):
+
+```java
+@Critical("MONEY")
+public void post(String account, long cents) { ... }
+```
+
+or, for code you do not own, name it in a policy file passed with `--policy`:
+
+```
+sink   MONEY  com.acme.billing.Ledger#post*
+sink   DATA   java.sql.*Statement#execute*
+opaque com.acme.plugins.PluginBus#dispatch
+store  settings write com.acme.settings.SettingsService#set*
+store  settings read  com.acme.settings.SettingsService#get*
+```
+
+- `sink` adds a sink. Adding or removing one is reported as a policy change and always needs
+  review.
+- `opaque` names a call the analysis cannot follow, in addition to the built-in list (reflection,
+  method handles, `ServiceLoader`, Spring event publishing and bean lookup, dispatch by URL).
+- `store NAME write|read owner#method` declares state that outlives a request, such as a table or
+  a cache that your own wrapper hides. Repositories, mappers, DAOs and the common database clients
+  are recognised without it.
+- `participant class|global annotation` names an annotation that makes a framework call a method
+  inside flows it is not called from. The usual Spring, Jakarta and AspectJ ones are built in.
+
+---
+
+[Back to the README](../README.md)

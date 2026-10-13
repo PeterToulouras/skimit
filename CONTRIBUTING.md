@@ -13,10 +13,10 @@ Open an issue with:
 - the verdict you got and the one you expected, with a sentence on why.
 
 A method marked `ISOLATED` that can in fact affect a sink is the most serious kind of bug here.
-The quickest way to find one is `skimit verify` on your own test suite (see the README); its
-output is a ready-made report.
-Check the Known gaps section of the README first; if it is one of those, a comment on the
-matching issue helps prioritise.
+The quickest way to find one is `skimit verify` on your own test suite (see
+[docs/usage.md](docs/usage.md)); its output is a ready-made report. Check
+[docs/limits.md](docs/limits.md) first; if it is one of the known gaps, a comment on the matching
+issue helps prioritise.
 
 ## Building
 

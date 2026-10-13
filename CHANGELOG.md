@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The README is a short overview; the reference material moved to `docs/usage.md`,
+  `docs/how-it-works.md`, `docs/evidence.md` and `docs/limits.md`. The animated demo is replaced by
+  sharp screenshots of the report.
+
 ## 0.1.1
 
 Fixes found by the [October 2026 experiment](docs/experiment.md), which ran the runtime checker on
