@@ -5,6 +5,9 @@
 - The Action and the examples use the current major versions of GitHub's own actions
   (`checkout@v7`, `setup-java@v6`, `upload-artifact@v7`), so a first run shows no deprecation
   warnings.
+- The Action's default Maven build skips the git-commit-id plugin and style plugins, which fail
+  in the worktree it uses for the base commit (Apollo uses git-commit-id).
+- `examples/policies/apollo.policy`: data writes plus Apollo's portal-to-admin HTTP writes.
 
 ## 0.1.4
 

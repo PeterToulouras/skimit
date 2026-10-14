@@ -36,7 +36,11 @@ fi
 
 build() {
   if [ -n "${SKIMIT_BUILD:-}" ]; then bash -c "$SKIMIT_BUILD"
-  elif [ -f pom.xml ]; then mvn -q -B -DskipTests -Dcheckstyle.skip=true -Denforcer.skip=true compile
+  # The base is a git worktree, which some plugins (git-commit-id) cannot read; style checks are
+  # skipped because only the classes matter here.
+  elif [ -f pom.xml ]; then mvn -q -B -DskipTests -Dcheckstyle.skip=true -Denforcer.skip=true \
+      -Dmaven.gitcommitid.skip=true -Dspring-javaformat.skip=true -Dlicense.skip=true \
+      -Dformatter.skip=true -Dimpsort.skip=true -Drewrite.skip=true compile
   elif [ -x ./gradlew ]; then ./gradlew -q classes
   elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then gradle -q classes
   else log "no pom.xml or Gradle build found; set the build input"; return 1
