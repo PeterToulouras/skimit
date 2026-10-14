@@ -40,6 +40,8 @@ Download `skimit.jar` from the [latest release](https://github.com/PeterTouloura
 java -jar skimit.jar diff --base base/target/classes --head head/target/classes --html report.html
 ```
 
+With Gradle, point it at `build/classes/java/main` instead.
+
 For the example pull request in this repository, it prints:
 
 ```
@@ -81,6 +83,10 @@ java -jar skimit.jar analyze target/classes --agent-config agent.conf
 mvn test "-DargLine=-javaagent:skimit-agent.jar=config=agent.conf,out=trace-%p.txt"
 java -jar skimit.jar verify target/classes --trace trace-1234.txt
 ```
+
+With Gradle, the test step is
+`./gradlew test --init-script skimit-agent.gradle -PskimitAgent=skimit-agent.jar -PskimitConfig=agent.conf`,
+using the init script from the release, and the classes are in `build/classes/java/main`.
 
 To try it without your own code, clone the repository, run `mvn package`, then `./examples/demo.sh`.
 

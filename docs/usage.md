@@ -21,7 +21,8 @@ Add `--html report.html` to either command for the interactive report: what to r
 for whichever method you select, and a map of every class coloured by verdict.
 It is one self-contained file, so a CI job can attach it to the build.
 
-Inputs are class directories or jars, as many as you like. `--exit-code` returns 1 when anything
+Inputs are class directories or jars, as many as you like, from any build tool: Maven puts classes
+in `target/classes`, Gradle in `build/classes/java/main`, one per module. `--exit-code` returns 1 when anything
 lands in "must review" or a sink declaration changed, so a CI job can turn the result into a
 required check.
 
@@ -34,6 +35,16 @@ your tests (or the application) with the recording agent, then compare.
 java -jar skimit.jar analyze target/classes --policy your.policy --agent-config agent.conf
 mvn test "-DargLine=-javaagent:skimit-agent.jar=config=agent.conf,out=trace-%p.txt"
 java -jar skimit.jar verify target/classes --policy your.policy --trace trace-1234.txt
+```
+
+With Gradle, attach the agent with `skimit-agent.gradle` from the release (also in `scripts/`). It is
+an init script, so the project's own build files stay as they are:
+
+```
+java -jar skimit.jar analyze build/classes/java/main --policy your.policy --agent-config agent.conf
+./gradlew test --init-script skimit-agent.gradle \
+    -PskimitAgent=skimit-agent.jar -PskimitConfig=agent.conf -PskimitOut=trace-%p.txt
+java -jar skimit.jar verify build/classes/java/main --policy your.policy --trace trace-1234.txt
 ```
 
 The agent notes every flow that reaches a sink: which methods were on the call stack at that
@@ -58,6 +69,9 @@ request and its base, then writes the manifest to the job summary.
     java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
         --policy head/skimit.policy >> "$GITHUB_STEP_SUMMARY"
 ```
+
+For Gradle, build with `./gradlew -p head classes` and `./gradlew -p base classes` and compare
+`base/build/classes/java/main` with `head/build/classes/java/main`.
 
 Keep the policy file under code-owner review: whoever can edit it decides what counts as
 critical.

@@ -124,6 +124,9 @@ scripts/replay.sh path/to/your/repo your.policy 100
 scripts/fix-check.py path/to/your/repo path/to/your/repo-replay
 ```
 
+It builds each commit with Maven or Gradle, whichever the commit uses. When a project has both,
+`REPLAY_TOOL=gradle` picks Gradle.
+
 ---
 
 [Back to the README](../README.md)

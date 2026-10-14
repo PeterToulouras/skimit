@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Gradle projects are covered end to end. `scripts/skimit-agent.gradle` is an init script that
+  attaches the recording agent to every test task without touching the project's build files, and
+  `scripts/replay.sh` builds each commit with Gradle when it has no Maven build (or when
+  `REPLAY_TOOL=gradle`). The analysis itself already read Gradle's class folders; the docs now say
+  so. On Spring PetClinic, the Gradle-built classes get the same verdicts as the Maven-built ones,
+  and the Gradle test run gives the same runtime check result.
+
 ## 0.1.3
 
 From a first run on a production codebase:

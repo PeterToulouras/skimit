@@ -5,29 +5,44 @@
 #
 #   scripts/replay.sh <git-repo> <policy-file> [commits] [-- build command...]
 #
-# Each commit is checked out into a scratch worktree and built with the build command (default:
-# a quiet Maven compile with tests and style checks off). Compiled classes are cached per commit,
-# so a commit and its child share one build. The run can be interrupted and resumed.
+# Each commit is checked out into a scratch worktree and built with the build command. By default
+# that is a quiet compile with tests and style checks off: Maven when the commit has a pom.xml,
+# otherwise Gradle (the project's own ./gradlew when it has one). Compiled classes are cached per
+# commit, so a commit and its child share one build. The run can be interrupted and resumed.
 #
 # Environment:
 #   SKIMIT_JAR   path to skimit.jar (default: the one built in this checkout)
 #   REPLAY_WORK  scratch directory (default: <git-repo>/../<name>-replay)
 #   REPLAY_TIMEOUT  seconds allowed per build (default 600)
 #   REPLAY_COMMITS  replay exactly these commits (space-separated) instead of the most recent ones
+#   REPLAY_TOOL  maven or gradle, to choose when a project has both builds (default: maven)
 #
 # Output: <work>/replay.jsonl, one line per commit; <work>/diffs/<sha>.json, the full manifest of
 # each commit (scripts/fix-check.py reads these); and a summary on stdout.
 set -uo pipefail
-[ $# -ge 2 ] || { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 repo="$(cd "$1" && pwd)"; policy="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2
 count=100
 if [ $# -gt 0 ] && [ "$1" != "--" ]; then count="$1"; shift; fi
 [ "${1:-}" = "--" ] && shift
-if [ $# -gt 0 ]; then build=("$@"); else
-  build=(mvn -q -B -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true
-         -Dspring-javaformat.skip=true -Dlicense.skip=true -Dformatter.skip=true -Dimpsort.skip=true
-         -Drewrite.skip=true -Dmaven.gitcommitid.skip=true compile)
-fi
+build=("$@")
+maven=(mvn -q -B -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true
+       -Dspring-javaformat.skip=true -Dlicense.skip=true -Dformatter.skip=true -Dimpsort.skip=true
+       -Drewrite.skip=true -Dmaven.gitcommitid.skip=true compile)
+# `classes` compiles main sources in every subproject; tests and checks are not part of it.
+gradle_args=(-q classes)
+
+# The build for the commit checked out in the worktree: the one given, or the project's own.
+build_here() {
+  if [ ${#build[@]} -gt 0 ]; then "${build[@]}"; return; fi
+  local has_gradle=""
+  [ -f build.gradle ] || [ -f build.gradle.kts ] || [ -f settings.gradle ] || [ -f settings.gradle.kts ] && has_gradle=1
+  if [ -f pom.xml ] && { [ -z "$has_gradle" ] || [ "${REPLAY_TOOL:-maven}" = maven ]; }; then "${maven[@]}"
+  elif [ -n "$has_gradle" ] && [ -x ./gradlew ]; then ./gradlew "${gradle_args[@]}"
+  elif [ -n "$has_gradle" ]; then gradle "${gradle_args[@]}"
+  else echo "replay: no pom.xml or Gradle build in this commit" >&2; return 1
+  fi
+}
 here="$(cd "$(dirname "$0")/.." && pwd)"
 jar="${SKIMIT_JAR:-$here/skimit-analyzer/target/skimit.jar}"
 [ -f "$jar" ] || { echo "replay: $jar not found; run mvn package first" >&2; exit 2; }
@@ -42,7 +57,7 @@ classes_for() {
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
     git -C "$tree" checkout -q -f "$sha" && git -C "$tree" clean -qfdx
-    if (cd "$tree" && timeout "${REPLAY_TIMEOUT:-600}" "${build[@]}") > "$dir/build.log" 2>&1; then
+    if (cd "$tree" && export -f build_here && timeout "${REPLAY_TIMEOUT:-600}" bash -c "$(declare -p build maven gradle_args); build_here") > "$dir/build.log" 2>&1; then
       local n=0
       while IFS= read -r d; do n=$((n + 1)); cp -r "$d" "$dir/$n"; done < <(
         find "$tree" -type d \( -path '*/target/classes' -o -path '*/build/classes/java/main' \) -not -path '*/node_modules/*' | sort)

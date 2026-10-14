@@ -1,0 +1,26 @@
+// Attaches skimit-agent.jar to every test task, so `skimit verify` can check the verdicts against
+// what the tests really run. Nothing in the project's own build files changes.
+//
+//   ./gradlew test --init-script scripts/skimit-agent.gradle \
+//       -PskimitAgent=skimit-agent.jar -PskimitConfig=agent.conf -PskimitOut=trace-%p.txt
+//
+// skimitOut is optional (default: skimit-trace-%p.txt in the directory Gradle was started from);
+// %p becomes the process id, so each test JVM writes its own trace.
+
+def props = gradle.startParameter.projectProperties
+def agentPath = props['skimitAgent']
+def configPath = props['skimitConfig']
+if (!agentPath || !configPath) {
+  throw new GradleException('skimit: pass -PskimitAgent=<path to skimit-agent.jar> and -PskimitConfig=<agent config>')
+}
+def start = gradle.startParameter.currentDir
+def resolve = { String p -> def f = new File(p); (f.absolute ? f : new File(start, p)).canonicalPath }
+def agentArg = "-javaagent:${resolve(agentPath)}=config=${resolve(configPath)},out=${resolve(props['skimitOut'] ?: 'skimit-trace-%p.txt')}"
+
+allprojects {
+  tasks.withType(Test).configureEach {
+    jvmArgs agentArg
+    // A run with the agent must actually run the tests, not reuse an earlier result.
+    outputs.upToDateWhen { false }
+  }
+}
