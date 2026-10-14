@@ -104,8 +104,9 @@ critical.
 With nothing declared, skimit uses a built-in rule: every data write is critical, whether it goes
 through your own repositories, mappers and DAOs or straight through a common client (JDBC, Spring's
 `JdbcTemplate`, JPA, Hibernate, MyBatis, MongoDB, DynamoDB, S3). The full list is
-[data-writes.policy](../examples/policies/data-writes.policy). Reads, queries and plain JDBC
-`execute()` are not included.
+[data-writes.policy](../examples/policies/data-writes.policy). For your own repositories, mappers and DAOs, a
+method counts as a write when its name says so, wherever the word is (`save`, `batchDelete`,
+`scheduleBatchUpdate`). Reads, queries and plain JDBC `execute()` are not included.
 The output says when it is in use. Declaring any sink of your own replaces it, and
 `--no-default-sinks` turns it off.
 
@@ -129,6 +130,11 @@ store  settings read  com.acme.settings.SettingsService#get*
 
 - `sink` adds a sink. Adding or removing one is reported as a policy change and always needs
   review.
+- Patterns are `owner#method` globs, where `*` matches any run of characters. In place of the
+  method glob, `@write` matches every method whose name says it writes: `save`, `insert`,
+  `update`, `delete`, `remove`, `upsert` or `clear`, at the start of the name or as a later word
+  (`batchDelete`, `scheduleBatchUpdate`, `markDeleted`), unless the name starts as a read
+  (`findByUpdateTime`, `isDeleted`). For example, `sink DATA *Repository#@write`.
 - `opaque` names a call the analysis cannot follow, in addition to the built-in list (reflection,
   method handles, `ServiceLoader`, Spring event publishing and bean lookup, dispatch by URL).
 - `store NAME write|read owner#method` declares state that outlives a request, such as a table or

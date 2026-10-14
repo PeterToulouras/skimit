@@ -385,6 +385,29 @@ class AnalysisTest {
   }
 
   @Test
+  void theBuiltInRuleFindsAWriteWordAnywhereInTheName() throws IOException {
+    for (String name : new String[] {"save", "saveAll", "deleteById", "batchDeleteByAppId", "scheduleBatchUpdate",
+        "softDelete", "bulkInsert", "upsertJob", "clearLog", "markDeleted"}) {
+      assertTrue(Policy.rule("D", "JobMapper#@write").matches("JobMapper", name), name);
+    }
+    for (String name : new String[] {"findById", "findByUpdateTimeAfter", "countByDeleted", "existsByRemovedFalse",
+        "getLastUpdate", "isDeleted", "listToDelete", "pageList", "selectForUpdate", "lambda$batchDelete$0"}) {
+      assertTrue(!Policy.rule("D", "JobMapper#@write").matches("JobMapper", name), name);
+    }
+    Analysis a = Compiler.analyze(
+        "public interface JobMapper { int scheduleBatchUpdate(Object jobs); Object findByUpdateTime(long t); }",
+        """
+        public class Scheduler {
+          JobMapper jobs;
+          void tick(Object j) { jobs.scheduleBatchUpdate(j); }
+          Object recent(long t) { return jobs.findByUpdateTime(t); }
+        }""");
+    assertTrue(a.usingDefaultSinks);
+    assertEquals(Verdict.ON_PATH, verdict(a, "Scheduler", "tick"));
+    assertTrue(verdict(a, "Scheduler", "recent") != Verdict.ON_PATH);
+  }
+
+  @Test
   void theBuiltInRuleCanBeTurnedOff() throws IOException {
     Policy policy = Policy.defaults();
     policy.defaultSinks = false;

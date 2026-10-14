@@ -271,6 +271,13 @@ from should review to isolated and nothing else moves. Five commits, all in PetC
 should review to isolated only. The runtime check still finds no misses on any of the six suites,
 and none of the methods a later bug fix touched is isolated.
 
+0.1.6 widens the built-in rule to find a write word anywhere in a repository, mapper or DAO method's
+name, after a code review bot pointed out that Apollo's `batchDelete` methods did not count. That
+adds 84 write methods across the projects (64 of them litemall's `logicalDelete*` mappers) and no
+reads. On the replay, 6 commits move from should review to must review and none move out of must
+review. The bug-fix and security-fix checks still find no misses. Apollo is the only one of the six
+test suites whose sinks changed; re-recorded, its tests now reach a sink 1,003 times, with no misses.
+
 ## Limits
 
 - **The sinks are mine, not the maintainers'.** One blunt rule for everything. A project's own

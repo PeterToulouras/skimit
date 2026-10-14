@@ -32,7 +32,8 @@ import java.util.regex.Pattern;
  * flows it is not called from: {@code class} when it runs alongside the other methods of the same
  * object, {@code global} when it can run inside any flow.
  *
- * Patterns are {@code owner#method} globs where {@code *} matches any run of characters.
+ * Patterns are {@code owner#method} globs where {@code *} matches any run of characters. In place of
+ * the method glob, {@code @write} matches every method whose name says it writes (see {@link #WRITES}).
  */
 public final class Policy {
   public record Rule(String domain, Pattern owner, Pattern name, String source) {
@@ -84,6 +85,29 @@ public final class Policy {
    * repositories, mappers and DAOs or straight through a common database or storage client. A
    * blunt starting point that needs no setup; a project's own sinks are narrower and better.
    */
+  /**
+   * In place of a method glob, {@code @write} matches every method whose name says it writes:
+   * {@code save}, {@code insert}, {@code update}, {@code delete}, {@code remove}, {@code upsert} or
+   * {@code clear}, at the start of the name or as a later word of it ({@code batchDelete},
+   * {@code scheduleBatchUpdate}, {@code markDeleted}), unless the name starts as a read
+   * ({@code findByUpdateTime}, {@code isDeleted}).
+   */
+  static final String WRITES = "@write";
+  private static final String WRITE_WORDS = "save|insert|update|delete|remove|upsert|clear";
+  private static final Pattern WRITE_NAME = Pattern.compile(
+      "(?:" + WRITE_WORDS + ").*"
+      + "|(?!(?:find|get|count|exists|query|select|list|search|load|read|is|has|fetch|lookup|scan|contains|stream)(?![a-z]))"
+      + "[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)*?(?:" + capitalized(WRITE_WORDS) + ")(?:s|d|ed)?(?![a-z]).*");
+
+  private static String capitalized(String alternatives) {
+    StringBuilder sb = new StringBuilder();
+    for (String w : alternatives.split("\\|")) {
+      if (sb.length() > 0) sb.append('|');
+      sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1));
+    }
+    return sb.toString();
+  }
+
   static final List<Rule> DEFAULT_SINKS = new ArrayList<>();
   static final String DEFAULT_SINK_DOMAIN = "DATA_WRITE";
 
@@ -116,9 +140,7 @@ public final class Policy {
 
   static {
     for (String type : new String[] {"*Repository", "*Mapper", "*Dao", "*DAO"}) {
-      for (String verb : new String[] {"save*", "insert*", "update*", "delete*", "remove*"}) {
-        DEFAULT_SINKS.add(rule(DEFAULT_SINK_DOMAIN, type + "#" + verb));
-      }
+      DEFAULT_SINKS.add(rule(DEFAULT_SINK_DOMAIN, type + "#" + WRITES));
     }
     for (String[] client : DEFAULT_CLIENT_WRITES) {
       for (int i = 1; i < client.length; i++) DEFAULT_SINKS.add(rule(DEFAULT_SINK_DOMAIN, client[0] + "#" + client[i]));
@@ -262,8 +284,12 @@ public final class Policy {
   static Rule rule(String domain, String pattern) {
     int hash = pattern.indexOf('#');
     if (hash < 0) throw new IllegalArgumentException("Pattern needs owner#method: " + pattern);
-    return new Rule(domain, glob(pattern.substring(0, hash)), glob(pattern.substring(hash + 1)), pattern);
+    String method = pattern.substring(hash + 1);
+    return new Rule(domain, glob(pattern.substring(0, hash)),
+        method.equals(WRITES) ? WRITE_NAME : glob(method), pattern);
   }
+
+
 
   private static Pattern glob(String g) {
     StringBuilder sb = new StringBuilder();

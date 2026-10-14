@@ -1,7 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.1.6
 
+The built-in rule now recognises a write by the words in a method's name, not only its first word.
+Before, a repository's `batchDelete`, a mapper's `logicalDeleteByPrimaryKey` or XXL-JOB's
+`scheduleUpdate` did not count as a write, so a change that reached only them could come out as
+isolated. A code review bot found the first of these on Apollo's pull request.
+
+- A repository, mapper or DAO method is a write when its name has `save`, `insert`, `update`,
+  `delete`, `remove`, `upsert` or `clear` at the start or as a later word (`batchDelete`,
+  `scheduleBatchUpdate`, `markDeleted`), unless the name starts as a read (`findByUpdateTime`,
+  `isDeleted`). In a recent build of each of the nine replayed projects, this adds 84 write
+  methods (13 in Apollo, 64 in litemall, 5 in XXL-JOB, 2 in newbee-mall) and no reads.
+- Policy files can use the same test: `sink DATA *Repository#@write`.
+- On the 575 replayed commits, 6 move from should review to must review and none move out of must
+  review. The bug-fix and security-fix checks still find no misses; the runtime check finds none
+  on the six test suites.
 - On a pull request, the Action compares GitHub's merge commit with its first parent, so the
   manifest covers exactly the pull request's change even when the base branch has moved on.
 - `examples/policies/apollo.policy` covers Apollo's `batchDelete*` repository methods.

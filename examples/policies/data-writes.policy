@@ -2,26 +2,13 @@
 # every data write is a critical sink, through your own repositories, mappers and DAOs
 # or straight through a common database or storage client.
 
-sink DATA_WRITE *Repository#save*
-sink DATA_WRITE *Repository#insert*
-sink DATA_WRITE *Repository#update*
-sink DATA_WRITE *Repository#delete*
-sink DATA_WRITE *Repository#remove*
-sink DATA_WRITE *Mapper#save*
-sink DATA_WRITE *Mapper#insert*
-sink DATA_WRITE *Mapper#update*
-sink DATA_WRITE *Mapper#delete*
-sink DATA_WRITE *Mapper#remove*
-sink DATA_WRITE *Dao#save*
-sink DATA_WRITE *Dao#insert*
-sink DATA_WRITE *Dao#update*
-sink DATA_WRITE *Dao#delete*
-sink DATA_WRITE *Dao#remove*
-sink DATA_WRITE *DAO#save*
-sink DATA_WRITE *DAO#insert*
-sink DATA_WRITE *DAO#update*
-sink DATA_WRITE *DAO#delete*
-sink DATA_WRITE *DAO#remove*
+# @write: any method whose name says it writes (save, insert, update, delete, remove, upsert,
+# clear), at the start or as a later word (batchDelete, scheduleBatchUpdate, markDeleted),
+# unless the name starts as a read (findByUpdateTime, isDeleted).
+sink DATA_WRITE *Repository#@write
+sink DATA_WRITE *Mapper#@write
+sink DATA_WRITE *Dao#@write
+sink DATA_WRITE *DAO#@write
 
 sink DATA_WRITE java.sql.*Statement#executeUpdate
 sink DATA_WRITE java.sql.*Statement#executeLargeUpdate
