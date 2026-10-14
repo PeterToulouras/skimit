@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The Action never fails a job unless `fail-on-must-review` is set. A pull request or base that
+  does not build, a failed download, or a failed analysis is reported in the summary and as a
+  warning; a pull request comment that cannot be posted (a fork's read-only token) is a warning.
 - The manifest says "1 method changed", not "1 methods changed".
 - The CI examples check out with `persist-credentials: false`, since the action needs no token to
   fetch the base of a public repository.

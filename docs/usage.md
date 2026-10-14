@@ -87,6 +87,10 @@ at its default.
 | `comment` | `false` | post the manifest as one pull request comment, updated on each push; needs `pull-requests: write` |
 | `base` | the pull request's base | the commit to compare against |
 
+If the comparison cannot run (the pull request or its base does not build, or no classes are
+found), the job says so in the summary and as a warning, and still passes: the project's own build
+job is the one that should fail. Only `fail-on-must-review` makes skimit fail a job.
+
 The `must-review` output holds the count, for later steps. skimit's own repository runs the action
 on every pull request: see [.github/workflows/skimit.yml](../.github/workflows/skimit.yml).
 

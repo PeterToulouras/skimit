@@ -19,7 +19,7 @@ inputs:
     required: false
     default: latest
   fail-on-must-review:
-    description: Fail the job when anything lands in must review. Off by default, so the job only reports.
+    description: Fail the job when anything lands in must review. Off by default, so the job only reports; a build that fails is reported as a warning, not a failure.
     required: false
     default: 'false'
   comment:

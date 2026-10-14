@@ -22,6 +22,15 @@ summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 
 log() { echo "skimit: $*" >&2; }
 
+# The job only reports: anything that stops the comparison is written to the summary and shown as
+# a warning, and the step still succeeds. Only fail-on-must-review fails it.
+give_up() {
+  log "$1"
+  echo "::warning title=skimit::$1"
+  printf '## skimit\n\n%s\n' "$1" >> "$summary"
+  exit 0
+}
+
 # The jar: a path, a release, or the latest release.
 version="${SKIMIT_VERSION:-latest}"
 if [ -f "$version" ]; then
@@ -31,7 +40,7 @@ else
   if [ "$version" = latest ]; then url="https://github.com/PeterToulouras/skimit/releases/latest/download/skimit.jar"
   else url="https://github.com/PeterToulouras/skimit/releases/download/v${version#v}/skimit.jar"; fi
   log "downloading $url"
-  curl -fsSL --retry 3 -o "$jar" "$url"
+  curl -fsSL --retry 3 -o "$jar" "$url" || give_up "Could not download skimit from $url."
 fi
 
 build() {
@@ -56,28 +65,27 @@ classes() {
 # The base: the same repository at the pull request's base commit, in a worktree beside it.
 git -C "$head_dir" fetch -q --no-tags --depth=1 origin "$base_sha" 2>/dev/null || true
 rm -rf "$base_dir"
-git -C "$head_dir" worktree add -q --detach "$base_dir" "$base_sha"
+git -C "$head_dir" worktree add -q --detach "$base_dir" "$base_sha" \
+  || give_up "The base commit \`$base_sha\` could not be checked out, so this change could not be compared."
 trap 'git -C "$head_dir" worktree remove --force "$base_dir" 2>/dev/null || true' EXIT
 
 log "building the head"
-(cd "$head_dir" && build)
+(cd "$head_dir" && build) \
+  || give_up "This pull request does not build, so skimit could not compare it. The project's own build job shows the error."
 log "building the base ($base_sha)"
-if ! (cd "$base_dir" && build); then
-  log "the base does not build, so there is nothing to compare against"
-  printf '## skimit\n\nThe base commit `%s` does not build, so this change could not be compared.\n' "$base_sha" >> "$summary"
-  exit 0
-fi
+(cd "$base_dir" && build) \
+  || give_up "The base commit \`$base_sha\` does not build, so this change could not be compared."
 
 # Read line by line rather than with mapfile, which the bash on macOS runners lacks.
 head_classes=(); while IFS= read -r d; do head_classes+=("$d"); done < <(classes "$head_dir" "$out")
 base_classes=(); while IFS= read -r d; do base_classes+=("$d"); done < <(classes "$base_dir")
 if [ ${#head_classes[@]} -eq 0 ] || [ ${#base_classes[@]} -eq 0 ]; then
-  log "no compiled classes found after the build; set the build input"; exit 1
+  give_up "No compiled classes were found after the build. Set the build input to a command that compiles the project."
 fi
 
 args=(diff --base "${base_classes[@]}" --head "${head_classes[@]}" --json "$out/manifest.json" --html "$out/report.html")
 [ -n "${SKIMIT_POLICY:-}" ] && args+=(--policy "$head_dir/$SKIMIT_POLICY")
-java -jar "$jar" "${args[@]}" > "$out/manifest.md"
+java -jar "$jar" "${args[@]}" > "$out/manifest.md" || give_up "The analysis did not finish; the step log shows why."
 
 cat "$out/manifest.md" >> "$summary"
 printf '\nThe interactive report is attached to this run as the `skimit-report` artifact.\n' >> "$summary"
@@ -85,17 +93,21 @@ printf '\nThe interactive report is attached to this run as the `skimit-report` 
 must="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["mustReview"] + (1 if d["policy"] else 0))' "$out/manifest.json")"
 { echo "must-review=$must"; echo "report=$out/report.html"; } >> "${GITHUB_OUTPUT:-/dev/null}"
 
-if [ "${SKIMIT_COMMENT:-false}" = true ] && [ -n "${PR_NUMBER:-}" ]; then
-  body="$out/comment.md"
+# One comment per pull request, updated on each push rather than repeated.
+post_comment() {
+  local body="$out/comment.md" existing
   { echo '<!-- skimit -->'; head -c 60000 "$out/manifest.md"; } > "$body"
-  # One comment per pull request, updated on each push rather than repeated.
   existing="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-    --jq '.[] | select(.body | startswith("<!-- skimit -->")) | .id' | tail -n 1)"
+    --jq '.[] | select(.body | startswith("<!-- skimit -->")) | .id' | tail -n 1)" || return 1
   if [ -n "$existing" ]; then
     gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F "body=@$body" > /dev/null
   else
     gh pr comment "$PR_NUMBER" --body-file "$body"
   fi
+}
+if [ "${SKIMIT_COMMENT:-false}" = true ] && [ -n "${PR_NUMBER:-}" ]; then
+  # A pull request from a fork gets a read-only token, so the comment can fail; the summary stands.
+  post_comment || echo "::warning title=skimit::Could not post the pull request comment; the manifest is in the job summary."
 fi
 
 if [ "${SKIMIT_FAIL:-false}" = true ] && [ "$must" -gt 0 ]; then
