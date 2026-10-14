@@ -263,6 +263,14 @@ On the replay these moved 2 of the 575 commits from "isolated only" to "should r
 the 13,006 changed methods out of isolated. The headline numbers are the same to the nearest
 percent on either version.
 
+Later, running skimit on PetClinic REST's recent pull requests showed three sources of noise:
+MapStruct mappers treated as data stores, JPA query building counted as a write, and `toString`
+on a plain `Object` fanning out to every class. 0.1.5 fixes them. Replaying the 575 commits again
+with the built-in rule, must review is unchanged (226 commits, 1,634 methods); 1,602 methods move
+from should review to isolated and nothing else moves. Five commits, all in PetClinic REST, go from
+should review to isolated only. The runtime check still finds no misses on any of the six suites,
+and none of the methods a later bug fix touched is isolated.
+
 ## Limits
 
 - **The sinks are mine, not the maintainers'.** One blunt rule for everything. A project's own

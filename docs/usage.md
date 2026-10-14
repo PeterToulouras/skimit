@@ -77,7 +77,7 @@ jobs:
 |---|---|---|
 | `build` | a quiet compile with Maven, or Gradle when there is no `pom.xml` | the command that compiles the project |
 | `policy` | none (every data write is critical) | a policy file, relative to the repository root |
-| `version` | `latest` | the skimit release to run, such as `0.1.4` |
+| `version` | `latest` | the skimit release to run, such as `0.1.5` |
 | `fail-on-must-review` | `false` | fail the job when anything lands in must review |
 | `comment` | `false` | post the manifest as one pull request comment, updated on each push; needs `pull-requests: write` |
 | `base` | the pull request's base | the commit to compare against |

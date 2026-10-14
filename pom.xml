@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.skimit</groupId>
   <artifactId>skimit-parent</artifactId>
-  <version>0.1.4</version>
+  <version>0.1.5</version>
   <packaging>pom</packaging>
   <name>skimit</name>
   <description>Deterministic review manifests from bytecode: prove which changes can touch critical code.</description>

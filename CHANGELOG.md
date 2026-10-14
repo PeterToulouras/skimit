@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.1.5
 
+Precision fixes found by running skimit on PetClinic REST's recent pull requests. On its two
+pagination pull requests, which only read, 47 of the 66 changed methods used to land in should
+review; now none do. The runtime check still finds no misses on any of the six test suites.
+
+- A MapStruct mapper (`@org.mapstruct.Mapper`) and its generated implementation are object
+  converters, not a data store, whatever the class is called. They are never built-in sinks.
+- Building a JPA query (`createQuery`, `setParameter`, `setMaxResults` and the like) is neither a
+  read nor a write; running one with `executeUpdate` is a write, and is now a built-in sink.
+- `toString`, `hashCode` and `equals` called on a plain `Object` no longer fan out to every class in
+  the program, and reading a collection field inside them no longer counts as changing it. Generated
+  DTOs stop dragging their setters into critical flows.
 - The Action and the examples use the current major versions of GitHub's own actions
   (`checkout@v7`, `setup-java@v6`, `upload-artifact@v7`), so a first run shows no deprecation
   warnings.

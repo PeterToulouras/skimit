@@ -29,6 +29,9 @@ code.
 - **Expressions in strings.** A bean method named in an annotation expression
   (`@PreAuthorize("@rules.canEdit(#id)")`) is followed. Other expression languages, templates and
   configuration files that name methods are not.
+- **`toString`, `hashCode` and `equals` on a plain `Object`.** These calls are not followed into
+  the application, just as string concatenation reaches `toString` inside the library unseen.
+  A `toString` that writes something critical would be missed.
 - **Reflection by another name.** Opaque calls are matched by a list. A reflective path through a
   library that is not on the list is invisible.
 - **Lambda numbering.** Adding a lambda can renumber the ones after it in the same class, which

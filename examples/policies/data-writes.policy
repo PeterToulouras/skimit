@@ -36,6 +36,8 @@ sink DATA_WRITE jakarta.persistence.EntityManager#remove
 sink DATA_WRITE javax.persistence.EntityManager#persist
 sink DATA_WRITE javax.persistence.EntityManager#merge
 sink DATA_WRITE javax.persistence.EntityManager#remove
+sink DATA_WRITE jakarta.persistence.*Query#executeUpdate
+sink DATA_WRITE javax.persistence.*Query#executeUpdate
 sink DATA_WRITE org.hibernate.*Session#save*
 sink DATA_WRITE org.hibernate.*Session#persist
 sink DATA_WRITE org.hibernate.*Session#update

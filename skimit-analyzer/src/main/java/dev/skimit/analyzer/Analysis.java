@@ -295,6 +295,7 @@ public final class Analysis {
     // Nothing declared: start from the built-in rule rather than report that all is clear.
     if (sinks.isEmpty() && policy.sinks.isEmpty() && policy.defaultSinks) {
       for (MethodKey m : candidates) {
+        if (graph.converter(m.owner())) continue;
         for (Policy.Rule r : Policy.DEFAULT_SINKS) {
           if (r.matches(m.owner(), m.name())) addSink(m, Set.of(r.domain()));
         }

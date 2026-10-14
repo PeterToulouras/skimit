@@ -183,6 +183,29 @@ public final class CallGraph {
     }
   }
 
+  private static final Set<String> CONVERTER_ANNOTATIONS = Set.of("Lorg/mapstruct/Mapper;", "Lorg/mapstruct/MapperConfig;");
+  private final Map<String, Boolean> converterCache = new HashMap<>();
+
+  /** True for a MapStruct mapper or its generated implementation: an object converter, not a store. */
+  public boolean converter(String type) {
+    Boolean cached = converterCache.get(type);
+    if (cached != null) return cached;
+    boolean found = false;
+    Deque<String> work = new ArrayDeque<>(List.of(type));
+    Set<String> seen = new HashSet<>();
+    while (!work.isEmpty() && !found) {
+      ClassNode cn = program.classes.get(work.poll());
+      if (cn == null || !seen.add(cn.name)) continue;
+      for (List<org.objectweb.asm.tree.AnnotationNode> list : java.util.Arrays.asList(cn.visibleAnnotations, cn.invisibleAnnotations)) {
+        if (list != null) for (org.objectweb.asm.tree.AnnotationNode an : list) found |= CONVERTER_ANNOTATIONS.contains(an.desc);
+      }
+      if (cn.superName != null) work.add(cn.superName);
+      work.addAll(cn.interfaces);
+    }
+    converterCache.put(type, found);
+    return found;
+  }
+
   /** True when a framework constructs this class itself (a stereotype annotation says so). */
   public boolean managed(String cls) {
     ClassNode cn = program.classes.get(cls);
@@ -497,8 +520,9 @@ public final class CallGraph {
     String receiver = !isStatic && onThis && from.receiver() != null ? from.receiver() : "*";
     boolean write = fi.getOpcode() == Opcodes.PUTFIELD || fi.getOpcode() == Opcodes.PUTSTATIC;
     if (!write) fieldReads.computeIfAbsent(from, k -> new TreeSet<>()).add(field + "@" + receiver);
-    // Reading a collection is enough to change it, so such a read counts as a write as well.
-    if (write || mutableContainer(decl.desc)) {
+    // Reading a collection is enough to change it, so such a read counts as a write as well;
+    // except in toString, hashCode and equals, which by contract only look.
+    if (write || (mutableContainer(decl.desc) && !objectMethod(from.method()))) {
       writersAll.computeIfAbsent(field, k -> new ArrayList<>()).add(from);
       if (receiver.equals("*")) writersUnknown.computeIfAbsent(field, k -> new ArrayList<>()).add(from);
       else writersExact.computeIfAbsent(field + "@" + receiver, k -> new ArrayList<>()).add(from);
@@ -517,6 +541,11 @@ public final class CallGraph {
    */
   public String storeOf(String type) {
     if (storeCache.containsKey(type)) return storeCache.get(type);
+    // A MapStruct mapper converts objects; despite its name it stores nothing.
+    if (converter(type)) {
+      storeCache.put(type, null);
+      return null;
+    }
     String found = null;
     Deque<String> work = new ArrayDeque<>(List.of(type));
     Set<String> seen = new HashSet<>();
@@ -557,6 +586,13 @@ public final class CallGraph {
       writersAll.computeIfAbsent("store:" + s, k -> new ArrayList<>()).add(from);
     }
     for (String s : read) fieldReads.computeIfAbsent(from, k -> new TreeSet<>()).add("store:" + s + "@*");
+  }
+
+  /** toString(), hashCode() or equals(Object): methods whose contract is to look, not change. */
+  static boolean objectMethod(MethodKey m) {
+    return (m.name().equals("toString") && m.desc().equals("()Ljava/lang/String;"))
+        || (m.name().equals("hashCode") && m.desc().equals("()I"))
+        || (m.name().equals("equals") && m.desc().equals("(Ljava/lang/Object;)Z"));
   }
 
   private static boolean mutableContainer(String desc) {
@@ -656,6 +692,10 @@ public final class CallGraph {
       MethodKey bound = resolveUp(self, name, desc);
       return nodesFor(bound != null ? bound : symbolic, self);
     }
+    // toString, hashCode or equals called on a plain Object: every class in the program would be a
+    // candidate. As with string concatenation (which reaches toString inside the library), these
+    // calls are not followed into the application.
+    if (owner.equals("java/lang/Object") && objectMethod(symbolic)) return List.of(new Node(symbolic, null));
     List<Node> out = new ArrayList<>();
     for (String r : receivers(owner)) {
       MethodKey bound = resolveUp(r, name, desc);

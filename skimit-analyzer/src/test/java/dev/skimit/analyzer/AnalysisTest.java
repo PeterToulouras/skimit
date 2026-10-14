@@ -441,4 +441,58 @@ class AnalysisTest {
   void aStaticInitializerIsNamedAsOne() {
     assertEquals("Prices (static initializer)", new MethodKey("shop/Prices", "<clinit>", "()V").pretty());
   }
+
+  @Test
+  void aMapStructMapperIsAConverterNotAStore() throws IOException {
+    Analysis a = Compiler.analyze(ORDERS,
+        "package org.mapstruct; public @interface Mapper {}",
+        "@org.mapstruct.Mapper public interface OrderMapper { Object toDto(Object o); Object updateFromDto(Object d); }",
+        "public class OrderMapperImpl implements OrderMapper { public Object toDto(Object o) { return o; } public Object updateFromDto(Object d) { return d; } }",
+        """
+        public class OrderService {
+          OrderRepository orders; OrderMapper mapper;
+          void place(Object o) { orders.save(o); }
+          Object show(long id) { return mapper.toDto(orders.findById(id)); }
+        }""");
+    assertEquals(Verdict.ON_PATH, verdict(a, "OrderService", "place"));
+    assertEquals(Verdict.ISOLATED, verdict(a, "OrderService", "show"));
+    assertEquals(Verdict.ISOLATED, verdict(a, "OrderMapperImpl", "updateFromDto"));
+    assertTrue(a.sinks.keySet().stream().noneMatch(m -> m.owner().contains("Mapper")));
+  }
+
+  @Test
+  void buildingAQueryIsNotAWriteButRunningAnUpdateIs() throws IOException {
+    String jpa = "package jakarta.persistence; public interface EntityManager { TypedQuery createQuery(String q); void persist(Object o); }";
+    String query = "package jakarta.persistence; public interface TypedQuery { TypedQuery setMaxResults(int n); java.util.List getResultList(); int executeUpdate(); }";
+    Analysis a = Compiler.analyze(jpa, query,
+        """
+        public class Owners {
+          jakarta.persistence.EntityManager em;
+          java.util.List page(int n) { return em.createQuery("from Owner").setMaxResults(n).getResultList(); }
+          void add(Object o) { em.persist(o); }
+          int purge() { return em.createQuery("delete from Owner").executeUpdate(); }
+        }""");
+    assertEquals(Verdict.ISOLATED, verdict(a, "Owners", "page"));
+    assertEquals(Verdict.ON_PATH, verdict(a, "Owners", "add"));
+    assertEquals(Verdict.ON_PATH, verdict(a, "Owners", "purge"));
+  }
+
+  @Test
+  void toStringOnAPlainObjectDoesNotPullEveryClassIntoTheFlow() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        """
+        public class Dto {
+          java.util.List<String> tags = new java.util.ArrayList<>();
+          public void setTags(java.util.List<String> t) { tags = t; }
+          public String toString() { return "Dto" + tags; }
+        }""",
+        """
+        public class Payments {
+          Ledger l;
+          void pay(Object note) { l.post(note.toString().length()); }
+        }""");
+    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "pay"));
+    assertEquals(Verdict.ISOLATED, verdict(a, "Dto", "toString"));
+    assertEquals(Verdict.ISOLATED, verdict(a, "Dto", "setTags"));
+  }
 }

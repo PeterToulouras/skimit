@@ -76,6 +76,7 @@ public final class Policy {
     "software/amazon/awssdk/services/dynamodb/DynamoDbClient",
     "software/amazon/awssdk/services/dynamodb/DynamoDbAsyncClient",
     "com/amazonaws/services/dynamodbv2/AmazonDynamoDB", "org/apache/ibatis/session/SqlSession",
+    "jakarta/persistence/Query", "jakarta/persistence/TypedQuery", "javax/persistence/Query", "javax/persistence/TypedQuery",
   };
 
   /**
@@ -93,6 +94,8 @@ public final class Policy {
     {"org.springframework.jdbc.core.simple.SimpleJdbcInsert", "execute*"},
     {"jakarta.persistence.EntityManager", "persist", "merge", "remove"},
     {"javax.persistence.EntityManager", "persist", "merge", "remove"},
+    {"jakarta.persistence.*Query", "executeUpdate"},
+    {"javax.persistence.*Query", "executeUpdate"},
     {"org.hibernate.*Session", "save*", "persist", "update", "merge", "delete", "remove"},
     {"org.apache.ibatis.session.SqlSession", "insert", "update", "delete"},
     {"org.springframework.data.mongodb.core.*Mongo*", "save", "insert*", "update*", "upsert", "remove",
@@ -127,7 +130,11 @@ public final class Policy {
   private static final Pattern READ_VERB = Pattern.compile(
       "(find|get|read|query|select|load|list|search|exists|count|fetch|is|has|contains|scan|lookup).*");
 
-  private static final Pattern NEITHER = Pattern.compile("close|toString|hashCode|equals|getClass|unwrap|isWrapperFor|isClosed|isOpen");
+  // Building a query reads and writes nothing; running it does (Query#executeUpdate is a write).
+  private static final Pattern NEITHER = Pattern.compile("close|toString|hashCode|equals|getClass|unwrap|isWrapperFor|isClosed|isOpen"
+      + "|create(Native|Named|StoredProcedure|Criteria)?Query|createNamedStoredProcedureQuery|getCriteriaBuilder|createEntityGraph"
+      + "|getMetamodel|getProperties|getFlushMode|setFlushMode|getLockMode"
+      + "|set(Parameter|FirstResult|MaxResults|Hint|LockMode|Timeout|CacheMode|CacheStoreMode|CacheRetrieveMode)");
 
   /** What a call to a store method does, judged by its name; an unfamiliar name may do either. */
   static boolean writes(String method) {
