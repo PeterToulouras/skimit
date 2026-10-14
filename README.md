@@ -90,6 +90,20 @@ using the init script from the release, and the classes are in `build/classes/ja
 
 To try it without your own code, clone the repository, run `mvn package`, then `./examples/demo.sh`.
 
+## In CI
+
+Add it to a GitHub workflow and every pull request gets the manifest in its job summary:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: actions/setup-java@v4
+  with: { distribution: temurin, java-version: 21 }
+- uses: PeterToulouras/skimit@v0
+```
+
+It only reports unless you ask it to fail the job or comment on the pull request; see
+[docs/usage.md](docs/usage.md#in-ci).
+
 ## The three buckets
 
 | Bucket | What it means | What to do |

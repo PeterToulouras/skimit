@@ -55,23 +55,37 @@ reach the critical code, the more it is worth.
 
 ## In CI
 
-A sketch for GitHub Actions; adjust the build commands to your project. It builds the pull
-request and its base, then writes the manifest to the job summary.
+The GitHub Action builds the pull request and its base, compares them, and writes the manifest to
+the job summary. The interactive report is attached to the run. It reports only: it fails nothing
+and posts nothing unless you ask it to.
 
 ```yaml
-- uses: actions/checkout@v4
-  with: { path: head }
-- uses: actions/checkout@v4
-  with: { path: base, ref: ${{ github.event.pull_request.base.sha }} }
-- run: mvn -q -f head/pom.xml -DskipTests package
-- run: mvn -q -f base/pom.xml -DskipTests package
-- run: |
-    java -jar skimit.jar diff --base base/target/classes --head head/target/classes \
-        --policy head/skimit.policy >> "$GITHUB_STEP_SUMMARY"
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  skimit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: PeterToulouras/skimit@v0
 ```
 
-For Gradle, build with `./gradlew -p head classes` and `./gradlew -p base classes` and compare
-`base/build/classes/java/main` with `head/build/classes/java/main`.
+| Input | Default | What it does |
+|---|---|---|
+| `build` | a quiet compile with Maven, or Gradle when there is no `pom.xml` | the command that compiles the project |
+| `policy` | none (every data write is critical) | a policy file, relative to the repository root |
+| `version` | `latest` | the skimit release to run, such as `0.1.4` |
+| `fail-on-must-review` | `false` | fail the job when anything lands in must review |
+| `comment` | `false` | post the manifest as one pull request comment, updated on each push; needs `pull-requests: write` |
+| `base` | the pull request's base | the commit to compare against |
+
+The `must-review` output holds the count, for later steps. skimit's own repository runs the action
+on every pull request: see [.github/workflows/skimit.yml](../.github/workflows/skimit.yml).
+
+On another CI system, `action/run.sh <base-commit>` does the same job from the root of a checkout.
 
 Keep the policy file under code-owner review: whoever can edit it decides what counts as
 critical.

@@ -1,0 +1,4 @@
+# What is critical in skimit itself: anything that decides a verdict or what a manifest says.
+sink VERDICT dev.skimit.analyzer.Analysis#findSinks
+sink VERDICT dev.skimit.analyzer.Analysis#propagate
+sink MANIFEST dev.skimit.analyzer.Differ#<init>

@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
+- A GitHub Action: `uses: PeterToulouras/skimit@v0` builds a pull request and its base, compares
+  them, writes the manifest to the job summary and attaches the report. It fails nothing and posts
+  nothing unless asked (`fail-on-must-review`, `comment`). `action/run.sh` does the same job on
+  other CI systems. skimit runs it on its own pull requests, with `skimit.policy`.
 - Gradle projects are covered end to end. `scripts/skimit-agent.gradle` is an init script that
   attaches the recording agent to every test task without touching the project's build files, and
   `scripts/replay.sh` builds each commit with Gradle when it has no Maven build (or when

@@ -1,0 +1,20 @@
+# skimit reviewing skimit: every pull request gets a review manifest in its job summary.
+name: skimit
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - uses: ./
+        with:
+          build: mvn -q -B -DskipTests package
+          policy: skimit.policy
