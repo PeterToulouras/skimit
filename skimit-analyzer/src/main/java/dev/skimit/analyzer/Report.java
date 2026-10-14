@@ -68,7 +68,7 @@ public final class Report {
   public static String markdown(Differ d) {
     StringBuilder sb = new StringBuilder("# Review manifest\n\n");
     if (d.noSinks) sb.append(NO_SINKS_NOTE).append("\n\n");
-    sb.append(d.changes.size()).append(" methods changed: **").append(d.count(Bucket.MUST)).append(" must review**, ")
+    sb.append(d.changes.size()).append(d.changes.size() == 1 ? " method" : " methods").append(" changed: **").append(d.count(Bucket.MUST)).append(" must review**, ")
         .append(d.count(Bucket.SHOULD)).append(" should review, ").append(d.count(Bucket.SKIP)).append(" isolated.\n");
     if (d.usingDefaultSinks) sb.append("\n").append(DEFAULT_NOTE).append("\n");
     if (!d.policy.isEmpty()) {

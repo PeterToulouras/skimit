@@ -96,6 +96,7 @@ Add it to a GitHub workflow and every pull request gets the manifest in its job 
 
 ```yaml
 - uses: actions/checkout@v7
+  with: { persist-credentials: false }
 - uses: actions/setup-java@v6
   with: { distribution: temurin, java-version: 21 }
 - uses: PeterToulouras/skimit@v0

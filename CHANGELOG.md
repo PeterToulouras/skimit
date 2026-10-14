@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The manifest says "1 method changed", not "1 methods changed".
+- The CI examples check out with `persist-credentials: false`, since the action needs no token to
+  fetch the base of a public repository.
+
 ## 0.1.5
 
 Precision fixes found by running skimit on PetClinic REST's recent pull requests. On its two

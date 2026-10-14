@@ -68,10 +68,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with: { persist-credentials: false }
       - uses: actions/setup-java@v6
         with: { distribution: temurin, java-version: 21 }
       - uses: PeterToulouras/skimit@v0
 ```
+
+The action fetches the base commit with git. A public repository needs no token for that, so
+`persist-credentials: false` keeps the token out of the checkout. In a private repository, leave it
+at its default.
 
 | Input | Default | What it does |
 |---|---|---|
