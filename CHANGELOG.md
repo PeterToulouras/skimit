@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- On a pull request, the Action compares GitHub's merge commit with its first parent, so the
+  manifest covers exactly the pull request's change even when the base branch has moved on.
+- `examples/policies/apollo.policy` covers Apollo's `batchDelete*` repository methods.
 - The Action never fails a job unless `fail-on-must-review` is set. A pull request or base that
   does not build, a failed download, or a failed analysis is reported in the summary and as a
   warning; a pull request comment that cannot be posted (a fork's read-only token) is a warning.

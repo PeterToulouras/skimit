@@ -85,7 +85,7 @@ at its default.
 | `version` | `latest` | the skimit release to run, such as `0.1.5` |
 | `fail-on-must-review` | `false` | fail the job when anything lands in must review |
 | `comment` | `false` | post the manifest as one pull request comment, updated on each push; needs `pull-requests: write` |
-| `base` | the pull request's base | the commit to compare against |
+| `base` | the base the pull request merges into | the commit to compare against |
 
 If the comparison cannot run (the pull request or its base does not build, or no classes are
 found), the job says so in the summary and as a warning, and still passes: the project's own build

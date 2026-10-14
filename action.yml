@@ -27,7 +27,7 @@ inputs:
     required: false
     default: 'false'
   base:
-    description: Commit to compare against. Defaults to the pull request's base, or the previous commit on a push.
+    description: Commit to compare against. Defaults to the base the pull request merges into (the first parent of the merge commit GitHub checks out), or the previous commit on a push.
     required: false
     default: ''
 
@@ -53,7 +53,15 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         GH_TOKEN: ${{ github.token }}
       run: |
-        base="${BASE_INPUT:-${PR_BASE:-$PUSH_BEFORE}}"
+        base="$BASE_INPUT"
+        if [ -z "$base" ] && [ -n "$PR_BASE" ]; then
+          # A pull request is checked out as GitHub's merge of it into the current base. Its first
+          # parent is that base, so the comparison is exactly the pull request's own change, even
+          # when the base branch has moved on since the pull request was opened.
+          parents="$(git cat-file -p HEAD 2>/dev/null | awk '/^parent /{print $2}' || true)"
+          if [ "$(echo "$parents" | wc -l)" -eq 2 ]; then base="$(echo "$parents" | head -n 1)"; fi
+        fi
+        base="${base:-${PR_BASE:-$PUSH_BEFORE}}"
         if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ]; then
           echo "skimit: no base commit to compare against; set the base input" >&2
           exit 0
