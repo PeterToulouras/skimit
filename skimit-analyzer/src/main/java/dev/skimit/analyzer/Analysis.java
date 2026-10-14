@@ -208,7 +208,7 @@ public final class Analysis {
     Node n = chosen.get(m);
     switch (verdict(m)) {
       case ON_PATH:
-        return sinks.containsKey(m) ? "is a critical sink" : "can reach a critical sink";
+        return sinks.containsKey(m) ? "is itself a critical sink" : "can reach a critical sink";
       case INFLUENCES:
         String from = influencedBy.get(n).pretty();
         return switch (influenceLink.get(n)) {
