@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The Action and the examples use the current major versions of GitHub's own actions
+  (`checkout@v7`, `setup-java@v6`, `upload-artifact@v7`), so a first run shows no deprecation
+  warnings.
+
 ## 0.1.4
 
 - A GitHub Action: `uses: PeterToulouras/skimit@v0` builds a pull request and its base, compares

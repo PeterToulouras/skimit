@@ -95,8 +95,8 @@ To try it without your own code, clone the repository, run `mvn package`, then `
 Add it to a GitHub workflow and every pull request gets the manifest in its job summary:
 
 ```yaml
-- uses: actions/checkout@v4
-- uses: actions/setup-java@v4
+- uses: actions/checkout@v7
+- uses: actions/setup-java@v6
   with: { distribution: temurin, java-version: 21 }
 - uses: PeterToulouras/skimit@v0
 ```

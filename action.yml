@@ -60,7 +60,7 @@ runs:
         fi
         "$GITHUB_ACTION_PATH/action/run.sh" "$base"
     - if: always() && steps.run.outputs.report != ''
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: skimit-report
         path: ${{ steps.run.outputs.report }}
