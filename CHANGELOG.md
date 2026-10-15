@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.7
 
 Three verdict fixes, each found by running 0.1.6 on a large Java service and reproduced in a
 three-class project. Measured on the same 575 replayed commits as before; the runtime check on the
