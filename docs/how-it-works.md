@@ -41,11 +41,16 @@ subtype of its static type; that is why interface-typed dependency injection nee
 of the wiring. A lambda typed as one of your own interfaces is treated like any other
 implementation of it: it is called where the interface is called. A lambda or object handed to a
 library type is charged to the method that creates it, since the library may call it back.
-A method that receives such a callback as a parameter (a `java.util.function` type, `Runnable` or
-`Callable`) and runs it or hands it on to a library also calls it, so a wrapper like
-`withMetrics(Supplier<T> s)` is on the path of the lambda it is given. This follows the callback
-through wrappers that wrap it again in their own lambda, but only through parameters: a
-`Supplier.get` on a field or a local is not linked to anything.
+A method that receives such a callback as a parameter of a library type and runs it or hands it
+on to a library also calls it, so a wrapper like `withMetrics(Supplier<T> s)` is on the path of
+the lambda it is given, and `parse(File f, ContentHandler handler)`, which gives the handler to an
+XML reader, calls the handler its callers construct: the methods of that class which implement
+`ContentHandler` (read from the JDK when it has the type; otherwise every method the class
+overrides from a library). This follows the callback through wrappers that pass it on or wrap it
+again in their own lambda, but only through parameters: a `Supplier.get` or `setContentHandler`
+on a field or a local is not linked to anything. A class that extends a library type and that
+only a framework constructs is still `UNPROVEN`: no parameter carries it, so this rule does not
+apply to it.
 
 Separately, every top-level class gets a position from the class dependency graph: `LEAF` when
 nothing depends on it, `ROOT` when at least 10% of classes do (`--root-ratio`), `TRUNK` otherwise.

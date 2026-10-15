@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **A method that hands an object it was given to a library calls that object's callbacks.**
+  0.1.7 linked a callback parameter to what callers pass in only for `java.util.function` types,
+  `Runnable` and `Callable`. Now any parameter of a library type counts: a method that runs it or
+  hands it on to a library (such as `parse(File f, ContentHandler handler)` calling
+  `reader.setContentHandler(handler)`) calls, for each application class its callers construct
+  and pass in, that class's methods implementing the parameter's type, read from the JDK when it
+  has the type. Only parameters count, and wrappers that pass the object on again are followed.
+  A class that extends a library type and that only a framework constructs is still `UNPROVEN`.
+  On the replay of the 575 commits, no commit and no method moves bucket and no newly reachable
+  list changes; the runtime check on the six test suites is unchanged, with no misses.
+
 ## 0.1.7
 
 Three verdict fixes, each found by running 0.1.6 on a large Java service and reproduced in a

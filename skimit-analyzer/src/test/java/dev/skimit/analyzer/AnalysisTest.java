@@ -289,6 +289,40 @@ class AnalysisTest {
   }
 
   @Test
+  void aMethodThatHandsAnObjectItWasGivenToALibraryCallsItsCallbacks() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        """
+        import org.xml.sax.Attributes;
+        import org.xml.sax.helpers.DefaultHandler;
+        class RowHandler extends DefaultHandler {
+          Ledger l;
+          RowHandler(Ledger l) { this.l = l; }
+          @Override public void startElement(String uri, String local, String q, Attributes atts) { l.post(1); }
+        }""",
+        """
+        import org.xml.sax.helpers.DefaultHandler;
+        class QuietHandler extends DefaultHandler { Ledger l; public void flush() { l.post(2); } }""",
+        """
+        import org.xml.sax.ContentHandler;
+        import org.xml.sax.XMLReader;
+        public class Importer {
+          Ledger l; XMLReader reader; ContentHandler configured;
+          void importRows() throws Exception { parseVia(new RowHandler(l)); }
+          void parseVia(ContentHandler h) throws Exception { parse(h); }
+          void parse(ContentHandler h) throws Exception { reader.setContentHandler(h); reader.parse("rows.xml"); }
+          void importQuietly() throws Exception { parseQuiet(new QuietHandler()); }
+          void parseQuiet(ContentHandler h) { reader.setContentHandler(h); }
+          void fromField() { reader.setContentHandler(configured); }
+        }""");
+    assertEquals(Verdict.ON_PATH, verdict(a, "Importer", "parse"));      // hands the handler to the parser
+    assertEquals(Verdict.ON_PATH, verdict(a, "Importer", "parseVia"));   // passes it on again
+    assertEquals(List.of("Importer.parse", "RowHandler.startElement", "Ledger.post"), witness(a, "Importer", "parse"));
+    // Only the methods that implement the parameter's type: flush() is no ContentHandler method.
+    assertTrue(verdict(a, "Importer", "parseQuiet") != Verdict.ON_PATH);
+    assertTrue(verdict(a, "Importer", "fromField") != Verdict.ON_PATH);  // a field, not a parameter
+  }
+
+  @Test
   void objectHandedToALibraryCanBeCalledBack() throws IOException {
     Analysis a = Compiler.analyze(LEDGER,
         "public class Job implements Runnable { Ledger l; public void run() { l.post(1); } }",

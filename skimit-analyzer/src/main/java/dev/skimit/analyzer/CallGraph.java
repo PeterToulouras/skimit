@@ -153,9 +153,11 @@ public final class CallGraph {
 
   // --- Callbacks handed in through a parameter ---------------------------------------------
   //
-  // A lambda passed to a library interface is charged to the method that creates it. A wrapper
-  // such as withMetrics(Supplier<T> s) that receives it and runs it (s.get()) or hands it on to a
-  // library is part of the same flow, so it calls the lambda too. Only callbacks that arrive
+  // A lambda or object passed to a library type is charged to the method that creates it. A
+  // wrapper such as withMetrics(Supplier<T> s) that receives it and runs it (s.get()), or a
+  // parse(File, ContentHandler handler) that hands it on to a library (setContentHandler), is part
+  // of the same flow, so it calls what its callers pass in too: the lambda, or the methods of the
+  // application class that implement the parameter's library type. Only callbacks that arrive
   // through a parameter count: a Supplier.get on a field or a local is not linked to anything.
 
   private static boolean functional(String type) {
@@ -163,14 +165,25 @@ public final class CallGraph {
         || type.equals("java/util/concurrent/Callable");
   }
 
-  /** Where a value on the stack came from: a parameter of the method, or a lambda made there. */
-  private record Origin(int param, InvokeDynamicInsnNode lambda) {}
+  /**
+   * Where a value on the stack came from: a parameter of the method, a lambda made there, or an
+   * object of an application class made there.
+   */
+  private record Origin(int param, InvokeDynamicInsnNode lambda, String object) {}
+
+  /** A library type a callback can arrive as: not an application class, and not Object or String. */
+  private boolean libraryType(Type t) {
+    if (t.getSort() != Type.OBJECT) return false;
+    String n = t.getInternalName();
+    return !program.classes.containsKey(n) && !n.equals("java/lang/Object") && !n.equals("java/lang/String");
+  }
 
   /** A parameter, or a callback's way into another method: (method, parameter index). */
   private record Slot(MethodKey method, int param) {}
 
   private void callbacks() {
     Map<Slot, Set<Node>> bound = new HashMap<>();
+    Map<Slot, Set<String>> boundObjects = new HashMap<>();
     Map<Slot, Set<Slot>> flows = new HashMap<>();
     Set<Slot> used = new HashSet<>();
     for (ClassNode cn : program.classes.values()) {
@@ -195,14 +208,14 @@ public final class CallGraph {
             int base = f.getStackSize() - args.length;
             if (base - (hasThis ? 1 : 0) < 0) continue;
             boolean library = !program.classes.containsKey(mi.owner);
-            if (hasThis && functional(mi.owner)) {
+            if (hasThis && library) {
               for (Origin o : origins(f.getStack(base - 1), frames, mn, paramOfSlot, new HashSet<>())) {
                 if (o.param() >= 0) used.add(new Slot(key, o.param()));
               }
             }
             List<MethodKey> callees = null;
             for (int j = 0; j < args.length; j++) {
-              if (args[j].getSort() != Type.OBJECT || !functional(args[j].getInternalName())) continue;
+              if (!libraryType(args[j])) continue;
               for (Origin o : origins(f.getStack(base + j), frames, mn, paramOfSlot, new HashSet<>())) {
                 if (library) {
                   if (o.param() >= 0) used.add(new Slot(key, o.param()));
@@ -219,7 +232,8 @@ public final class CallGraph {
                 for (MethodKey callee : callees) {
                   Slot to = new Slot(callee, j);
                   if (o.param() >= 0) flows.computeIfAbsent(new Slot(key, o.param()), k -> new HashSet<>()).add(to);
-                  else bound.computeIfAbsent(to, k -> new LinkedHashSet<>()).addAll(lambdaTargets(from, o.lambda()));
+                  else if (o.lambda() != null) bound.computeIfAbsent(to, k -> new LinkedHashSet<>()).addAll(lambdaTargets(from, o.lambda()));
+                  else boundObjects.computeIfAbsent(to, k -> new TreeSet<>()).add(o.object());
                 }
               }
             }
@@ -253,24 +267,75 @@ public final class CallGraph {
         if (bound.computeIfAbsent(next, k -> new LinkedHashSet<>()).addAll(here)) work.add(next);
       }
     }
+    work = new ArrayDeque<>(boundObjects.keySet());
+    while (!work.isEmpty()) {
+      Slot s = work.poll();
+      Set<String> here = boundObjects.get(s);
+      for (Slot next : flows.getOrDefault(s, Set.of())) {
+        if (boundObjects.computeIfAbsent(next, k -> new TreeSet<>()).addAll(here)) work.add(next);
+      }
+    }
     for (Slot s : used) {
-      Set<Node> lambdasHere = bound.get(s);
-      if (lambdasHere == null || lambdasHere.isEmpty()) continue;
+      Set<Node> targets = new LinkedHashSet<>(bound.getOrDefault(s, Set.of()));
+      Set<String> objects = boundObjects.getOrDefault(s, Set.of());
+      if (!objects.isEmpty()) {
+        Type[] params = Type.getArgumentTypes(s.method().desc());
+        Set<String> wanted = s.param() < params.length ? libraryMethods(params[s.param()].getInternalName()) : null;
+        for (String cls : objects) {
+          for (MethodKey cb : shape(cls).callbacks()) {
+            if (wanted == null || wanted.contains(cb.name() + cb.desc())) targets.addAll(nodesFor(cb, cls));
+          }
+        }
+      }
+      if (targets.isEmpty()) continue;
       for (Node from : nodesOf.getOrDefault(s.method(), List.of())) {
         Set<Node> site = newSite(from);
-        for (Node t : lambdasHere) edge(from, t, site);
+        for (Node t : targets) edge(from, t, site);
       }
     }
   }
 
-  private static boolean relevant(MethodNode mn) {
-    for (Type t : Type.getArgumentTypes(mn.desc)) {
-      if (t.getSort() == Type.OBJECT && functional(t.getInternalName())) return true;
+  private final Map<String, Set<String>> libraryMethodCache = new HashMap<>();
+
+  /**
+   * The methods (name and descriptor) a library type and its supertypes declare, read from the
+   * running JDK when it has the type. Null when it does not: then every method a passed class
+   * overrides from its library parents is taken.
+   */
+  private Set<String> libraryMethods(String type) {
+    if (libraryMethodCache.containsKey(type)) return libraryMethodCache.get(type);
+    Set<String> out = new HashSet<>();
+    Deque<String> todo = new ArrayDeque<>(List.of(type));
+    Set<String> seen = new HashSet<>();
+    boolean found = false;
+    while (!todo.isEmpty()) {
+      String t = todo.poll();
+      if (!seen.add(t) || t.equals("java/lang/Object")) continue;
+      try (java.io.InputStream in = ClassLoader.getSystemResourceAsStream(t + ".class")) {
+        if (in == null) continue;
+        ClassNode cn = new ClassNode();
+        new org.objectweb.asm.ClassReader(in).accept(cn, org.objectweb.asm.ClassReader.SKIP_CODE);
+        found |= t.equals(type);
+        for (MethodNode mn : cn.methods) if (!mn.name.startsWith("<")) out.add(mn.name + mn.desc);
+        if (cn.superName != null) todo.add(cn.superName);
+        todo.addAll(cn.interfaces);
+      } catch (java.io.IOException e) {
+        // not readable: treated as unknown below
+      }
     }
+    Set<String> result = found ? out : null;
+    libraryMethodCache.put(type, result);
+    return result;
+  }
+
+  private boolean relevant(MethodNode mn) {
+    for (Type t : Type.getArgumentTypes(mn.desc)) if (libraryType(t)) return true;
     for (AbstractInsnNode insn : mn.instructions) {
       if (insn instanceof InvokeDynamicInsnNode indy) {
         Type made = Type.getReturnType(indy.desc);
         if (made.getSort() == Type.OBJECT && functional(made.getInternalName())) return true;
+      } else if (insn.getOpcode() == Opcodes.NEW && program.classes.containsKey(((TypeInsnNode) insn).desc)) {
+        return true;
       }
     }
     return false;
@@ -304,19 +369,21 @@ public final class CallGraph {
   }
 
   /** Follows a value back through local variables to the parameters and lambdas it came from. */
-  private static Set<Origin> origins(SourceValue v, Frame<SourceValue>[] frames, MethodNode mn, int[] paramOfSlot,
+  private Set<Origin> origins(SourceValue v, Frame<SourceValue>[] frames, MethodNode mn, int[] paramOfSlot,
       Set<AbstractInsnNode> seen) {
     Set<Origin> out = new HashSet<>();
     for (AbstractInsnNode src : v.insns) {
       if (!seen.add(src)) continue;
       if (src instanceof InvokeDynamicInsnNode indy && implementation(indy) != null) {
-        out.add(new Origin(-1, indy));
+        out.add(new Origin(-1, indy, null));
+      } else if (src.getOpcode() == Opcodes.NEW && program.classes.containsKey(((TypeInsnNode) src).desc)) {
+        out.add(new Origin(-1, null, ((TypeInsnNode) src).desc));
       } else if (src instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD) {
         Frame<SourceValue> at = frames[mn.instructions.indexOf(src)];
         if (at == null) continue;
         SourceValue local = at.getLocal(load.var);
         if (local.insns.isEmpty()) {
-          if (load.var < paramOfSlot.length && paramOfSlot[load.var] >= 0) out.add(new Origin(paramOfSlot[load.var], null));
+          if (load.var < paramOfSlot.length && paramOfSlot[load.var] >= 0) out.add(new Origin(paramOfSlot[load.var], null, null));
         } else {
           for (AbstractInsnNode store : local.insns) {
             Frame<SourceValue> before = frames[mn.instructions.indexOf(store)];
@@ -325,7 +392,7 @@ public final class CallGraph {
             }
           }
         }
-      } else if (src.getOpcode() == Opcodes.CHECKCAST) {
+      } else if (src.getOpcode() == Opcodes.CHECKCAST || src.getOpcode() == Opcodes.DUP) {
         Frame<SourceValue> at = frames[mn.instructions.indexOf(src)];
         if (at != null && at.getStackSize() > 0) out.addAll(origins(at.getStack(at.getStackSize() - 1), frames, mn, paramOfSlot, seen));
       }
