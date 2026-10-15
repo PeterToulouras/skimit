@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+Three verdict fixes, each found by running 0.1.6 on a large Java service and reproduced in a
+three-class project. Measured on the same 575 replayed commits as before; the runtime check on the
+six test suites still finds no misses, with the same counts.
+
+- **A wrapper that runs a callback it was handed is on that callback's path.** A method that
+  receives a `java.util.function` type, `Runnable` or `Callable` as a parameter and runs it, or
+  hands it on to a library, now calls the lambdas its callers pass in, also through wrappers that
+  capture the callback in a lambda of their own. Before, `withMetrics(Supplier<T> s)` came out
+  INFLUENCES though it is on the call stack when the write happens, and `skimit verify` reported
+  it. On the replay: no commit and no method moves bucket.
+- **Adding a lambda no longer marks other methods as changed.** javac numbers lambdas per class,
+  so a new lambda in one method renumbered the lambdas of every method after it. A lambda is now
+  known by its enclosing method and its place among that method's lambdas of the same type, and
+  matched across a change by an identical body first. On the replay: 11 commits lose phantom
+  entries (43 untouched enclosing methods and 144 lambda entries; 16 lambdas listed as added
+  are now changed), and no commit moves bucket.
+- **Unchanged methods that stop being isolated are reported.** A change can connect an untouched
+  method to a critical flow. Such methods are now listed as newly reachable, with the reason they
+  moved, in the manifest, the JSON (`reached`) and the HTML report; they are not counted as
+  changed. On the replay, 27 of 575 commits have some: 132 methods (110 now in a critical flow,
+  19 unproven, 3 on a path).
+
 ## 0.1.6
 
 The built-in rule now recognises a write by the words in a method's name, not only its first word.
