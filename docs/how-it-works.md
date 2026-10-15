@@ -54,6 +54,11 @@ could break. A diff reports position moves, new dependencies between classes and
 changes in their own section, so a reviewer who cares about structure reads that list instead of
 every body.
 
+A diff also lists untouched methods whose verdict moved because of a change elsewhere. One that
+was isolated and now takes part in a critical flow is reported as newly reachable, with the reason
+it moved: a reviewer was told its body could be skimmed, so it must be read once. These are not
+changes and do not count towards the changed methods.
+
 A change counts only if the method's bytecode changed. Comments, formatting, moved code and
 renamed locals are not changes. javac numbers lambda bodies across the whole class, so a lambda
 is known instead by its enclosing method and its place among that method's lambdas of the same

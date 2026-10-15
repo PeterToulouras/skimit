@@ -76,13 +76,29 @@ public final class Report {
       for (String p : d.policy) sb.append("- ").append(p).append('\n');
     }
     section(sb, d, Bucket.MUST, "Must review: on a critical path");
-    if (!d.ripple.isEmpty()) {
-      sb.append("\nBecause of these changes, ").append(d.ripple.size())
+    // Methods that were isolated are listed below with their reason; the sentence names the rest.
+    Set<MethodKey> listed = d.reached.stream().map(Differ.Reached::method).collect(Collectors.toSet());
+    List<MethodKey> ripple = d.ripple.stream().filter(m -> !listed.contains(m)).toList();
+    if (!ripple.isEmpty()) {
+      sb.append("\nBecause of these changes, ").append(ripple.size())
           .append(" untouched method(s) can now reach a sink: ")
-          .append(d.ripple.stream().limit(10).map(m -> "`" + m.pretty() + "`").collect(Collectors.joining(", ")))
-          .append(d.ripple.size() > 10 ? ", ...\n" : "\n");
+          .append(ripple.stream().limit(10).map(m -> "`" + m.pretty() + "`").collect(Collectors.joining(", ")))
+          .append(ripple.size() > 10 ? ", ...\n" : "\n");
     }
     section(sb, d, Bucket.SHOULD, "Should review: takes part in a critical flow, or cannot be proven clear");
+    if (!d.reached.isEmpty()) {
+      sb.append("\n## Newly reachable: unchanged, but no longer isolated\n\n")
+          .append("These bodies did not change, but a change elsewhere connects them to a critical flow."
+              + " Read them once.\n\n");
+      for (Differ.Reached r : d.reached) {
+        sb.append("- `").append(r.method().pretty()).append("` (was isolated, now ")
+            .append(r.now() == Analysis.Verdict.ON_PATH ? "on a critical path" : r.now() == Analysis.Verdict.INFLUENCES
+                ? "in a critical flow" : "unproven").append(")")
+            .append("\n  - ").append(r.reason());
+        if (!r.explanation().isEmpty()) sb.append("\n  - ").append(r.explanation());
+        sb.append('\n');
+      }
+    }
     if (!d.shape.isEmpty()) {
       sb.append("\n## Shape changes: review the structure, not the bodies\n\n");
       for (String s : d.shape) sb.append("- ").append(s).append('\n');
@@ -179,6 +195,9 @@ public final class Report {
         + ",\"isolated\":" + d.count(Bucket.SKIP) + ",\"noSinks\":" + d.noSinks + ",\"defaultSinks\":" + d.usingDefaultSinks
         + ",\"policy\":" + arr(d.policy) + ",\"shape\":" + arr(d.shape)
         + ",\"ripple\":" + refs(ids, d.ripple)
+        + ",\"reached\":[" + d.reached.stream().map(r -> "{\"method\":" + ref(ids, r.method()) + "," + kv("verdict", r.now().name())
+            + "," + kv("was", "ISOLATED") + "," + kv("reason", r.reason()) + "," + kv("name", r.method().pretty())
+            + ",\"witness\":" + refs(ids, r.witness()) + "}").collect(Collectors.joining(",")) + "]"
         + ",\"changes\":[" + String.join(",", changes) + "]}\n";
   }
 

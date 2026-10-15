@@ -179,7 +179,7 @@ const DATA = __DATA__;
     a.sinks = xs(a.sinks); a.edges = a.edges.map(e => [x(e[0]), x(e[1])]);
     for (const m of a.methods) { m.method = x(m.method); m.class = m.method.slice(0, m.method.indexOf("#")); m.witness = xs(m.witness); proofs(m); }
   }
-  if (DATA.diff) { DATA.diff.ripple = xs(DATA.diff.ripple); for (const c of DATA.diff.changes) { c.method = x(c.method); c.witness = xs(c.witness); proofs(c); } }
+  if (DATA.diff) { DATA.diff.ripple = xs(DATA.diff.ripple); for (const c of DATA.diff.changes) { c.method = x(c.method); c.witness = xs(c.witness); proofs(c); } for (const r of DATA.diff.reached || []) { r.method = x(r.method); r.witness = xs(r.witness); } }
 })();
 const LABEL = { ON_PATH: "On path", INFLUENCES: "Influences", UNPROVEN: "Unproven", ISOLATED: "Isolated" };
 const BUCKETS = [
@@ -238,12 +238,14 @@ function renderAnswer() {
   if (d.mustReview && d.shouldReview) parts.push(d.shouldReview + " more should be reviewed");
   if (!d.mustReview && d.shouldReview) parts.push(plural(d.shouldReview, "method", "methods") + " should be reviewed");
   if (d.isolated) parts.push(d.isolated + (d.isolated === 1 ? " is isolated and can be skimmed" : " are isolated and can be skimmed"));
-  $("sub").textContent = plural(total, "method", "methods") + " changed" + (parts.length ? ". " + parts.join(", ") + "." : ".");
+  const reached = (d.reached || []).length;
+  $("sub").textContent = plural(total, "method", "methods") + " changed" + (parts.length ? ". " + parts.join(", ") + "." : ".")
+    + (reached ? " " + plural(reached, "unchanged method", "unchanged methods") + " newly reachable." : "");
   for (const [b, , v] of BUCKETS) { const n = d.changes.filter(c => c.bucket === b).length; if (n) { const i = el("i", "v-" + v); i.style.flex = n; strip.append(i); } }
 }
 
 function renderList() {
-  const box = $("list"); box.replaceChildren();
+  const box = $("list"); box.replaceChildren(); reachedShown = false;
   if (!HAS_DIFF) {
     const g = el("div", "group v-ON_PATH"), h = el("h2"); h.append(el("i", "sw"), document.createTextNode("Sinks "), el("span", "n", String(DATA.head.sinks.length)));
     g.append(h, el("p", "hint", "What you declared critical. Everything else is judged by its connection to these."));
@@ -260,6 +262,7 @@ function renderList() {
     g.append(h, el("p", "hint", "What counts as critical was edited. Review this first."), ul); box.append(g);
   }
   for (const [b, title, v, hint] of BUCKETS) {
+    if (b === "SKIP") renderReached(box, d);
     const changes = d.changes.filter(c => c.bucket === b);
     if (!changes.length) continue;
     const collapsed = b === "SKIP" && changes.length > 8;
@@ -275,11 +278,27 @@ function renderList() {
     if (changes.length > 200) g.append(el("p", "note", "and " + (changes.length - 200) + " more"));
     box.append(g);
   }
+  renderReached(box, d);
   if (d.shape.length) {
     const g = el("div", "group"), h = el("h2"); h.append(document.createTextNode("Structure changes "), el("span", "n", String(d.shape.length)));
     const ul = el("ul", "plain"); d.shape.forEach(s => ul.append(el("li", null, s)));
     g.append(h, el("p", "hint", "Review the design, not the bodies."), ul); box.append(g);
   }
+}
+
+// Unchanged methods that were isolated and now take part in a critical flow: not changes, but a
+// reviewer who skimmed them before should read them once.
+let reachedShown = false;
+function renderReached(box, d) {
+  const rs = d.reached || [];
+  if (reachedShown || !rs.length) return;
+  reachedShown = true;
+  const g = el("div", "group v-INFLUENCES"), h = el("h2");
+  h.append(el("i", "sw"), document.createTextNode("Newly reachable "), el("span", "n", String(rs.length)));
+  g.append(h, el("p", "hint", "Unchanged, but no longer isolated: a change elsewhere connects them to a critical flow. Read them once."));
+  const items = el("div", "items");
+  for (const r of rs.slice(0, 200)) items.append(itemFor(r.method, r.name, "was isolated", sentence(r.reason), null, r.verdict));
+  g.append(items); box.append(g);
 }
 
 function itemFor(id, name, kind, why, fresh, verdict) {
@@ -311,6 +330,7 @@ function renderMap() {
     const keep = id => { const m = byId(id); if (m) relevant.add(m.class); };
     d.sinks.forEach(keep);
     if (HAS_DIFF) DATA.diff.changes.forEach(c => { keep(c.method); c.witness.forEach(keep); });
+    if (HAS_DIFF) (DATA.diff.reached || []).forEach(r => { keep(r.method); r.witness.forEach(keep); });
     else d.methods.filter(m => m.verdict === "ON_PATH").forEach(m => relevant.add(m.class));
     const s = byId(selected); if (s) { relevant.add(s.class); s.witness.forEach(keep); }
   }

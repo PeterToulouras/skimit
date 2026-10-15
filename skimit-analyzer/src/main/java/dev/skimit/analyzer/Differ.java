@@ -37,6 +37,16 @@ public final class Differ {
   public final List<String> shape = new ArrayList<>();
   /** Untouched methods that can now reach a sink because of something they call. */
   public final List<MethodKey> ripple = new ArrayList<>();
+
+  /** An untouched method that was isolated and is now part of a critical flow, and why. */
+  public record Reached(MethodKey method, Verdict now, String reason, String explanation, List<MethodKey> witness) {}
+
+  /**
+   * Untouched methods that were isolated before the change and are not any more. A reviewer was
+   * told their bodies could be skimmed; now they take part in a critical flow and must be read
+   * once. They are not changes and are not counted as changed methods.
+   */
+  public final List<Reached> reached = new ArrayList<>();
   /** True when the changed code was judged by the built-in sinks because none were declared. */
   public final boolean usingDefaultSinks;
   /** True when the code after the change has no sink at all, so nothing in it is critical. */
@@ -55,6 +65,9 @@ public final class Differ {
       Set<String> baseDomains = bv == Verdict.ON_PATH ? base.domains(b) : Set.of();
       if (same) {
         if (hv == Verdict.ON_PATH && bv != Verdict.ON_PATH) ripple.add(m);
+        if (bv == Verdict.ISOLATED && hv != Verdict.ISOLATED) {
+          reached.add(new Reached(m, hv, head.reason(m), head.explain(m), head.witness(m)));
+        }
         continue;
       }
       String kind = existed ? "changed" : "added";

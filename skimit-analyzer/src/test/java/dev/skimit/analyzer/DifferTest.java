@@ -65,6 +65,23 @@ class DifferTest {
   }
 
   @Test
+  void anUnchangedMethodThatJoinsACriticalFlowIsReportedButNotCounted() throws IOException {
+    String pricing = "public class Pricing { long price() { return 5; } }";
+    Differ d = diff(new String[] {LEDGER, CHECKOUT, pricing},
+        new String[] {LEDGER, "public class Checkout { Ledger l; Pricing p; void submit() { l.post(p.price()); } }", pricing});
+    assertEquals("submit", only(d).method().name());
+    assertEquals(1, d.reached.size(), d.reached.toString());
+    Differ.Reached r = d.reached.get(0);
+    assertEquals("price", r.method().name());
+    assertEquals(Analysis.Verdict.INFLUENCES, r.now());
+    assertTrue(r.reason().contains("Checkout.submit()"), r.reason());
+    String md = Report.markdown(d);
+    assertTrue(md.contains("1 method changed:"), md);  // the newly reachable method is not counted
+    assertTrue(md.contains("## Newly reachable") && md.contains("`Pricing.price()` (was isolated"), md);
+    assertTrue(Report.json(d).contains("\"reached\":[{\"method\":\"Pricing#price()J\""), Report.json(d));
+  }
+
+  @Test
   void isolatedBodyChangeIsSkippable() throws IOException {
     Differ d = diff(new String[] {LEDGER, CHECKOUT, REPORT},
         new String[] {LEDGER, CHECKOUT, "public class Report { public String render() { return \"b\"; } }"});
