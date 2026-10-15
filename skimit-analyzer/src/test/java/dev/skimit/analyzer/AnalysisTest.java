@@ -261,6 +261,34 @@ class AnalysisTest {
   }
 
   @Test
+  void aWrapperThatRunsACallbackItIsHandedIsOnThePath() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        """
+        import java.util.concurrent.Executor;
+        import java.util.function.Consumer;
+        import java.util.function.Supplier;
+        public class Payments {
+          Ledger l; Executor executor; Supplier<String> configured;
+          void pay() { withMetrics(() -> { l.post(1); return null; }); }
+          <T> T withMetrics(Supplier<T> s) { long t = System.nanoTime(); T r = s.get(); return r; }
+          void payLater() { outer(x -> l.post(x)); }
+          void outer(Consumer<Long> fn) { inner(() -> fn.accept(1L)); }
+          void inner(Runnable r) { r.run(); }
+          void payAsync() { submit(() -> l.post(2)); }
+          void submit(Runnable r) { executor.execute(r); }
+          void tick() { audit(() -> { }); }
+          void audit(Runnable r) { r.run(); }
+          String fromField() { return configured.get(); }
+        }""");
+    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "withMetrics"));   // runs the callback
+    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "outer"));         // wraps it in another lambda
+    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "inner"));
+    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "submit"));        // hands it on to a library
+    assertTrue(verdict(a, "Payments", "audit") != Verdict.ON_PATH);         // only ever given a harmless one
+    assertTrue(verdict(a, "Payments", "fromField") != Verdict.ON_PATH);     // not a parameter
+  }
+
+  @Test
   void objectHandedToALibraryCanBeCalledBack() throws IOException {
     Analysis a = Compiler.analyze(LEDGER,
         "public class Job implements Runnable { Ledger l; public void run() { l.post(1); } }",

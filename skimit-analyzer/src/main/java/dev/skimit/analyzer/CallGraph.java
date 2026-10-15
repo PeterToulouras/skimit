@@ -148,6 +148,189 @@ public final class CallGraph {
         }
       }
     }
+    callbacks();
+  }
+
+  // --- Callbacks handed in through a parameter ---------------------------------------------
+  //
+  // A lambda passed to a library interface is charged to the method that creates it. A wrapper
+  // such as withMetrics(Supplier<T> s) that receives it and runs it (s.get()) or hands it on to a
+  // library is part of the same flow, so it calls the lambda too. Only callbacks that arrive
+  // through a parameter count: a Supplier.get on a field or a local is not linked to anything.
+
+  private static boolean functional(String type) {
+    return type.startsWith("java/util/function/") || type.equals("java/lang/Runnable")
+        || type.equals("java/util/concurrent/Callable");
+  }
+
+  /** Where a value on the stack came from: a parameter of the method, or a lambda made there. */
+  private record Origin(int param, InvokeDynamicInsnNode lambda) {}
+
+  /** A parameter, or a callback's way into another method: (method, parameter index). */
+  private record Slot(MethodKey method, int param) {}
+
+  private void callbacks() {
+    Map<Slot, Set<Node>> bound = new HashMap<>();
+    Map<Slot, Set<Slot>> flows = new HashMap<>();
+    Set<Slot> used = new HashSet<>();
+    for (ClassNode cn : program.classes.values()) {
+      for (MethodNode mn : cn.methods) {
+        MethodKey key = new MethodKey(cn.name, mn.name, mn.desc);
+        if (!nodesOf.containsKey(key) || !relevant(mn)) continue;
+        Frame<SourceValue>[] frames;
+        try {
+          frames = new Analyzer<>(new SourceInterpreter()).analyze(cn.name, mn);
+        } catch (AnalyzerException | RuntimeException e) {
+          continue;
+        }
+        int[] paramOfSlot = paramSlots(mn);
+        Node from = nodesOf.get(key).get(0);
+        for (int i = 0; i < mn.instructions.size(); i++) {
+          AbstractInsnNode insn = mn.instructions.get(i);
+          Frame<SourceValue> f = frames[i];
+          if (f == null) continue;
+          if (insn instanceof MethodInsnNode mi) {
+            Type[] args = Type.getArgumentTypes(mi.desc);
+            boolean hasThis = mi.getOpcode() != Opcodes.INVOKESTATIC;
+            int base = f.getStackSize() - args.length;
+            if (base - (hasThis ? 1 : 0) < 0) continue;
+            boolean library = !program.classes.containsKey(mi.owner);
+            if (hasThis && functional(mi.owner)) {
+              for (Origin o : origins(f.getStack(base - 1), frames, mn, paramOfSlot, new HashSet<>())) {
+                if (o.param() >= 0) used.add(new Slot(key, o.param()));
+              }
+            }
+            List<MethodKey> callees = null;
+            for (int j = 0; j < args.length; j++) {
+              if (args[j].getSort() != Type.OBJECT || !functional(args[j].getInternalName())) continue;
+              for (Origin o : origins(f.getStack(base + j), frames, mn, paramOfSlot, new HashSet<>())) {
+                if (library) {
+                  if (o.param() >= 0) used.add(new Slot(key, o.param()));
+                  continue;
+                }
+                if (callees == null) {
+                  int kind = mi.getOpcode() == Opcodes.INVOKESTATIC ? STATIC
+                      : mi.getOpcode() == Opcodes.INVOKESPECIAL ? SPECIAL : VIRTUAL;
+                  callees = new ArrayList<>();
+                  for (Node n : targets(from, kind, false, mi.owner, mi.name, mi.desc)) {
+                    if (nodesOf.containsKey(n.method())) callees.add(n.method());
+                  }
+                }
+                for (MethodKey callee : callees) {
+                  Slot to = new Slot(callee, j);
+                  if (o.param() >= 0) flows.computeIfAbsent(new Slot(key, o.param()), k -> new HashSet<>()).add(to);
+                  else bound.computeIfAbsent(to, k -> new LinkedHashSet<>()).addAll(lambdaTargets(from, o.lambda()));
+                }
+              }
+            }
+          } else if (insn instanceof InvokeDynamicInsnNode indy) {
+            // A lambda that captures a callback parameter: inside the lambda's body the callback
+            // arrives as one of its own parameters.
+            Handle impl = implementation(indy);
+            if (impl == null || !program.classes.containsKey(impl.getOwner())) continue;
+            Type[] captured = Type.getArgumentTypes(indy.desc);
+            int base = f.getStackSize() - captured.length;
+            if (base < 0) continue;
+            boolean instance = impl.getTag() != Opcodes.H_INVOKESTATIC;
+            MethodKey body = new MethodKey(impl.getOwner(), impl.getName(), impl.getDesc());
+            for (int k = 0; k < captured.length; k++) {
+              int param = instance ? k - 1 : k;
+              if (param < 0) continue;
+              for (Origin o : origins(f.getStack(base + k), frames, mn, paramOfSlot, new HashSet<>())) {
+                if (o.param() >= 0) flows.computeIfAbsent(new Slot(key, o.param()), x -> new HashSet<>()).add(new Slot(body, param));
+              }
+            }
+          }
+        }
+      }
+    }
+    // What reaches each parameter, through any number of wrappers.
+    Deque<Slot> work = new ArrayDeque<>(bound.keySet());
+    while (!work.isEmpty()) {
+      Slot s = work.poll();
+      Set<Node> here = bound.get(s);
+      for (Slot next : flows.getOrDefault(s, Set.of())) {
+        if (bound.computeIfAbsent(next, k -> new LinkedHashSet<>()).addAll(here)) work.add(next);
+      }
+    }
+    for (Slot s : used) {
+      Set<Node> lambdasHere = bound.get(s);
+      if (lambdasHere == null || lambdasHere.isEmpty()) continue;
+      for (Node from : nodesOf.getOrDefault(s.method(), List.of())) {
+        Set<Node> site = newSite(from);
+        for (Node t : lambdasHere) edge(from, t, site);
+      }
+    }
+  }
+
+  private static boolean relevant(MethodNode mn) {
+    for (Type t : Type.getArgumentTypes(mn.desc)) {
+      if (t.getSort() == Type.OBJECT && functional(t.getInternalName())) return true;
+    }
+    for (AbstractInsnNode insn : mn.instructions) {
+      if (insn instanceof InvokeDynamicInsnNode indy) {
+        Type made = Type.getReturnType(indy.desc);
+        if (made.getSort() == Type.OBJECT && functional(made.getInternalName())) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Parameter index for each local slot that holds a parameter on entry, else -1. */
+  private static int[] paramSlots(MethodNode mn) {
+    int[] out = new int[Math.max(mn.maxLocals, 1) + 1];
+    java.util.Arrays.fill(out, -1);
+    int slot = (mn.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+    Type[] args = Type.getArgumentTypes(mn.desc);
+    for (int i = 0; i < args.length && slot < out.length; i++) {
+      out[slot] = i;
+      slot += args[i].getSize();
+    }
+    return out;
+  }
+
+  private static Handle implementation(InvokeDynamicInsnNode indy) {
+    if (!indy.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")) return null;
+    for (Object arg : indy.bsmArgs) if (arg instanceof Handle h && h.getTag() >= Opcodes.H_INVOKEVIRTUAL) return h;
+    return null;
+  }
+
+  private List<Node> lambdaTargets(Node from, InvokeDynamicInsnNode indy) {
+    Handle h = implementation(indy);
+    if (h == null) return List.of();
+    int kind = h.getTag() == Opcodes.H_INVOKESTATIC ? STATIC
+        : h.getTag() == Opcodes.H_INVOKEVIRTUAL || h.getTag() == Opcodes.H_INVOKEINTERFACE ? VIRTUAL : SPECIAL;
+    return targets(from, kind, false, h.getOwner(), h.getName(), h.getDesc());
+  }
+
+  /** Follows a value back through local variables to the parameters and lambdas it came from. */
+  private static Set<Origin> origins(SourceValue v, Frame<SourceValue>[] frames, MethodNode mn, int[] paramOfSlot,
+      Set<AbstractInsnNode> seen) {
+    Set<Origin> out = new HashSet<>();
+    for (AbstractInsnNode src : v.insns) {
+      if (!seen.add(src)) continue;
+      if (src instanceof InvokeDynamicInsnNode indy && implementation(indy) != null) {
+        out.add(new Origin(-1, indy));
+      } else if (src instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD) {
+        Frame<SourceValue> at = frames[mn.instructions.indexOf(src)];
+        if (at == null) continue;
+        SourceValue local = at.getLocal(load.var);
+        if (local.insns.isEmpty()) {
+          if (load.var < paramOfSlot.length && paramOfSlot[load.var] >= 0) out.add(new Origin(paramOfSlot[load.var], null));
+        } else {
+          for (AbstractInsnNode store : local.insns) {
+            Frame<SourceValue> before = frames[mn.instructions.indexOf(store)];
+            if (store instanceof VarInsnNode && before != null && before.getStackSize() > 0) {
+              out.addAll(origins(before.getStack(before.getStackSize() - 1), frames, mn, paramOfSlot, seen));
+            }
+          }
+        }
+      } else if (src.getOpcode() == Opcodes.CHECKCAST) {
+        Frame<SourceValue> at = frames[mn.instructions.indexOf(src)];
+        if (at != null && at.getStackSize() > 0) out.addAll(origins(at.getStack(at.getStackSize() - 1), frames, mn, paramOfSlot, seen));
+      }
+    }
+    return out;
   }
 
   public List<Set<Node>> sitesOf(Node n) {
