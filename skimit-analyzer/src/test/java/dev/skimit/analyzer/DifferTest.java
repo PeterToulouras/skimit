@@ -38,6 +38,33 @@ class DifferTest {
   }
 
   @Test
+  void addingALambdaDoesNotChangeTheMethodsWhoseLambdasGetRenumbered() throws IOException {
+    String before = """
+        import java.util.List;
+        public class Orders {
+          Ledger l;
+          void post(List<Long> xs) { xs.forEach(x -> l.post(x)); }
+          long countLong(List<String> xs) { return xs.stream().filter(x -> x.length() > 3).count(); }
+          long countShort(List<String> xs) { return xs.stream().filter(x -> x.length() < 3).filter(x -> x.length() < 3).count(); }
+        }""";
+    String after = """
+        import java.util.List;
+        public class Orders {
+          Ledger l;
+          void post(List<Long> xs) { xs.forEach(x -> l.post(x)); Runnable done = () -> System.out.println("done"); done.run(); }
+          long countLong(List<String> xs) { return xs.stream().filter(x -> x.length() > 3).count(); }
+          long countShort(List<String> xs) { return xs.stream().filter(x -> x.length() < 3).filter(x -> x.length() < 4).count(); }
+        }""";
+    Differ d = diff(new String[] {LEDGER, before}, new String[] {LEDGER, after});
+    // post() and its new lambda changed; countLong and its lambda, now numbered one higher, did not.
+    // Of countShort's two identical lambdas, only the second changed: it is reported as changed,
+    // and countShort itself, whose own bytecode is the same, is not.
+    java.util.List<String> changed = d.changes.stream().map(c -> c.method().name() + ":" + c.kind()).sorted().toList();
+    assertEquals(java.util.List.of("lambda$countShort$4:changed", "lambda$post$1:added", "post:changed"),
+        changed);
+  }
+
+  @Test
   void isolatedBodyChangeIsSkippable() throws IOException {
     Differ d = diff(new String[] {LEDGER, CHECKOUT, REPORT},
         new String[] {LEDGER, CHECKOUT, "public class Report { public String render() { return \"b\"; } }"});

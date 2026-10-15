@@ -2,9 +2,12 @@ package dev.skimit.analyzer;
 
 import dev.skimit.analyzer.Analysis.Verdict;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
@@ -42,12 +45,14 @@ public final class Differ {
   public Differ(Analysis base, Analysis head) {
     usingDefaultSinks = head.usingDefaultSinks;
     noSinks = head.sinks.isEmpty();
+    Map<MethodKey, MethodKey> earlier = counterparts(base, head);
     for (MethodKey m : head.verdicts.keySet()) {
-      boolean existed = base.verdicts.containsKey(m);
-      boolean same = existed && base.hashes.get(m).equals(head.hashes.get(m));
+      MethodKey b = earlier.get(m);
+      boolean existed = b != null;
+      boolean same = existed && base.hashes.get(b).equals(head.hashes.get(m));
       Verdict hv = head.verdict(m);
-      Verdict bv = existed ? base.verdict(m) : Verdict.ISOLATED;
-      Set<String> baseDomains = bv == Verdict.ON_PATH ? base.domains(m) : Set.of();
+      Verdict bv = existed ? base.verdict(b) : Verdict.ISOLATED;
+      Set<String> baseDomains = bv == Verdict.ON_PATH ? base.domains(b) : Set.of();
       if (same) {
         if (hv == Verdict.ON_PATH && bv != Verdict.ON_PATH) ripple.add(m);
         continue;
@@ -58,17 +63,18 @@ public final class Differ {
         fresh.removeAll(baseDomains);
         add(m, kind, Bucket.MUST, head, existed ? fresh : Set.of(), null);
       } else if (bv == Verdict.ON_PATH) {
-        add(m, kind, Bucket.MUST, base, Set.of(), "could reach a critical sink before this change and no longer can");
+        add(m, b, kind, Bucket.MUST, base, Set.of(), "could reach a critical sink before this change and no longer can");
       } else if (hv == Verdict.INFLUENCES || hv == Verdict.UNPROVEN) {
         add(m, kind, Bucket.SHOULD, head, Set.of(), null);
       } else if (bv == Verdict.INFLUENCES || bv == Verdict.UNPROVEN) {
-        add(m, kind, Bucket.SHOULD, base, Set.of(), "before this change, " + base.reason(m));
+        add(m, b, kind, Bucket.SHOULD, base, Set.of(), "before this change, " + base.reason(b));
       } else {
         add(m, kind, Bucket.SKIP, head, Set.of(), null);
       }
     }
+    Set<MethodKey> matched = new HashSet<>(earlier.values());
     for (MethodKey m : base.verdicts.keySet()) {
-      if (head.verdicts.containsKey(m)) continue;
+      if (matched.contains(m)) continue;
       Verdict bv = base.verdict(m);
       Bucket b = bv == Verdict.ON_PATH ? Bucket.MUST : bv == Verdict.ISOLATED ? Bucket.SKIP : Bucket.SHOULD;
       add(m, "removed", b, base, Set.of(), bv == Verdict.ISOLATED ? null : "before removal, " + base.reason(m));
@@ -86,10 +92,51 @@ public final class Differ {
     shape(base, head);
   }
 
+  /**
+   * The method each method after the change was before it: the same method, or for a javac
+   * lambda the one with the same enclosing method and type, matched first by an identical body
+   * and then in order. Lambda numbers alone say nothing, since adding a lambda renumbers the rest.
+   */
+  static Map<MethodKey, MethodKey> counterparts(Analysis base, Analysis head) {
+    Map<MethodKey, MethodKey> out = new HashMap<>();
+    Map<String, List<MethodKey>> baseGroups = new TreeMap<>();
+    Map<String, List<MethodKey>> headGroups = new TreeMap<>();
+    for (MethodKey m : base.verdicts.keySet()) {
+      String enc = CallGraph.enclosing(m);
+      if (enc != null) baseGroups.computeIfAbsent(m.owner() + "#" + enc + m.desc(), k -> new ArrayList<>()).add(m);
+    }
+    for (MethodKey m : head.verdicts.keySet()) {
+      String enc = CallGraph.enclosing(m);
+      if (enc != null) headGroups.computeIfAbsent(m.owner() + "#" + enc + m.desc(), k -> new ArrayList<>()).add(m);
+      else if (base.verdicts.containsKey(m)) out.put(m, m);
+    }
+    for (Map.Entry<String, List<MethodKey>> e : headGroups.entrySet()) {
+      List<MethodKey> after = e.getValue();
+      List<MethodKey> earlier = new ArrayList<>(baseGroups.getOrDefault(e.getKey(), List.of()));
+      after.sort(java.util.Comparator.comparingInt(CallGraph::lambdaIndex));
+      earlier.sort(java.util.Comparator.comparingInt(CallGraph::lambdaIndex));
+      List<MethodKey> unmatched = new ArrayList<>();
+      for (MethodKey h : after) {
+        MethodKey same = null;
+        for (MethodKey b : earlier) if (base.hashes.get(b).equals(head.hashes.get(h))) { same = b; break; }
+        if (same != null) { out.put(h, same); earlier.remove(same); }
+        else unmatched.add(h);
+      }
+      for (int i = 0; i < unmatched.size() && i < earlier.size(); i++) out.put(unmatched.get(i), earlier.get(i));
+    }
+    return out;
+  }
+
   private void add(MethodKey m, String kind, Bucket bucket, Analysis from, Set<String> newDomains, String reason) {
-    Verdict v = from.verdict(m);
-    changes.add(new Change(m, kind, bucket, v, v == Verdict.UNPROVEN ? Set.of() : from.domains(m), newDomains,
-        reason != null ? reason : from.reason(m), from.witness(m), from.explain(m), from.proofs(m)));
+    add(m, m, kind, bucket, from, newDomains, reason);
+  }
+
+  /** {@code m} names the change; {@code in} is the same method in {@code from}. */
+  private void add(MethodKey m, MethodKey in, String kind, Bucket bucket, Analysis from, Set<String> newDomains,
+      String reason) {
+    Verdict v = from.verdict(in);
+    changes.add(new Change(m, kind, bucket, v, v == Verdict.UNPROVEN ? Set.of() : from.domains(in), newDomains,
+        reason != null ? reason : from.reason(in), from.witness(in), from.explain(in), from.proofs(in)));
   }
 
   public long count(Bucket b) {

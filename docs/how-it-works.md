@@ -55,7 +55,10 @@ changes in their own section, so a reviewer who cares about structure reads that
 every body.
 
 A change counts only if the method's bytecode changed. Comments, formatting, moved code and
-renamed locals are not changes.
+renamed locals are not changes. javac numbers lambda bodies across the whole class, so a lambda
+is known instead by its enclosing method and its place among that method's lambdas of the same
+type, and is matched across the change by an identical body first. Adding a lambda to one method
+leaves the others, and their lambdas, unchanged.
 
 ---
 

@@ -468,14 +468,70 @@ public final class CallGraph {
     MethodNode mn = methods.get(key);
     Textifier t = new Textifier();
     mn.accept(new TraceMethodVisitor(t));
-    StringBuilder sb = new StringBuilder().append(mn.access).append('|').append(mn.exceptions).append('|');
-    for (Object o : t.getText()) sb.append(o);
+    StringBuilder text = new StringBuilder();
+    for (Object o : t.getText()) text.append(o);
+    StringBuilder sb = new StringBuilder().append(mn.access).append('|').append(mn.exceptions).append('|')
+        .append(stableLambdaNames(key.owner(), text.toString()));
     try {
       byte[] d = MessageDigest.getInstance("SHA-256").digest(sb.toString().getBytes(StandardCharsets.UTF_8));
       return HexFormat.of().formatHex(d, 0, 8);
     } catch (NoSuchAlgorithmException e) {
       throw new IllegalStateException(e);
     }
+  }
+
+  // --- Lambda identity -------------------------------------------------------------------------
+  //
+  // javac numbers lambda bodies per class (lambda$countLong$1), so adding a lambda to one method
+  // renumbers the lambdas of every method after it. A lambda is known instead by its enclosing
+  // method and its place among that method's lambdas of the same type; that is what a reference
+  // to it hashes as, so an untouched method stays untouched.
+
+  private static final java.util.regex.Pattern JAVAC_LAMBDA = java.util.regex.Pattern.compile("lambda\\$(.+)\\$(\\d+)");
+  private static final java.util.regex.Pattern LAMBDA_TOKEN = java.util.regex.Pattern.compile("lambda\\$[\\w$]*?\\$\\d+(?=\\()");
+  private Map<String, Map<String, String>> lambdaNames;
+
+  /** The method a javac lambda body was written in, or null if this is not one. */
+  static String enclosing(MethodKey m) {
+    java.util.regex.Matcher x = JAVAC_LAMBDA.matcher(m.name());
+    return x.matches() ? x.group(1) : null;
+  }
+
+  static int lambdaIndex(MethodKey m) {
+    java.util.regex.Matcher x = JAVAC_LAMBDA.matcher(m.name());
+    return x.matches() ? Integer.parseInt(x.group(2)) : -1;
+  }
+
+  /** A stable stand-in for each javac lambda of the class: enclosing method, type and place. */
+  public String lambdaName(MethodKey m) {
+    if (lambdaNames == null) {
+      lambdaNames = new HashMap<>();
+      Map<String, List<MethodKey>> groups = new TreeMap<>();
+      for (MethodKey k : methods.keySet()) {
+        String enc = enclosing(k);
+        if (enc != null) groups.computeIfAbsent(k.owner() + "#" + enc + k.desc(), x -> new ArrayList<>()).add(k);
+      }
+      for (List<MethodKey> g : groups.values()) {
+        g.sort(java.util.Comparator.comparingInt(CallGraph::lambdaIndex));
+        for (int i = 0; i < g.size(); i++) {
+          MethodKey k = g.get(i);
+          lambdaNames.computeIfAbsent(k.owner(), x -> new HashMap<>())
+              .put(k.name(), "lambda:" + enclosing(k) + ":" + k.desc() + ":" + i);
+        }
+      }
+    }
+    return lambdaNames.getOrDefault(m.owner(), Map.of()).get(m.name());
+  }
+
+  private String stableLambdaNames(String owner, String text) {
+    java.util.regex.Matcher x = LAMBDA_TOKEN.matcher(text);
+    StringBuilder out = new StringBuilder();
+    while (x.find()) {
+      String stable = lambdaName(new MethodKey(owner, x.group(), ""));
+      x.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(stable != null ? stable : x.group()));
+    }
+    x.appendTail(out);
+    return out.toString();
   }
 
   // ---------------------------------------------------------------------------------------------

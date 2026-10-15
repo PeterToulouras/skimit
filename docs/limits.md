@@ -34,8 +34,10 @@ code.
   A `toString` that writes something critical would be missed.
 - **Reflection by another name.** Opaque calls are matched by a list. A reflective path through a
   library that is not on the list is invisible.
-- **Lambda numbering.** Adding a lambda can renumber the ones after it in the same class, which
-  shows up as extra changed methods.
+- **Lambda order within one method.** A lambda is known by its enclosing method and its place
+  among that method's lambdas of the same type, matched across a change by its body first. Adding a
+  lambda to a method no longer touches other methods, but reordering same-typed lambdas inside one
+  method that also changes them can pair the wrong two.
 - **Kotlin, Scala, Groovy.** They compile to bytecode and should load, but nothing has been tested.
 
 ## Roadmap
