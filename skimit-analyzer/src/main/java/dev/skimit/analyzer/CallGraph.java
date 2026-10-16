@@ -532,13 +532,21 @@ public final class CallGraph {
 
   /** Stable digest of a method's signature and instructions; debug info does not participate. */
   public String bodyHash(MethodKey key) {
+    return bodyHash(key, java.util.function.UnaryOperator.identity());
+  }
+
+  /**
+   * The digest of {@link #bodyHash(MethodKey)} after {@code rename} has rewritten the class names
+   * in the method's text: how a method of a moved class is compared with the method it was.
+   */
+  public String bodyHash(MethodKey key, java.util.function.UnaryOperator<String> rename) {
     MethodNode mn = methods.get(key);
     Textifier t = new Textifier();
     mn.accept(new TraceMethodVisitor(t));
     StringBuilder text = new StringBuilder();
     for (Object o : t.getText()) text.append(o);
-    StringBuilder sb = new StringBuilder().append(mn.access).append('|').append(mn.exceptions).append('|')
-        .append(stableLambdaNames(key.owner(), text.toString()));
+    StringBuilder sb = new StringBuilder().append(mn.access).append('|').append(rename.apply(String.valueOf(mn.exceptions)))
+        .append('|').append(rename.apply(stableLambdaNames(key.owner(), text.toString())));
     try {
       byte[] d = MessageDigest.getInstance("SHA-256").digest(sb.toString().getBytes(StandardCharsets.UTF_8));
       return HexFormat.of().formatHex(d, 0, 8);

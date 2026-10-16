@@ -76,8 +76,8 @@ class DifferTest {
     assertEquals(Analysis.Verdict.INFLUENCES, r.now());
     assertTrue(r.reason().contains("Checkout.submit()"), r.reason());
     String md = Report.markdown(d);
-    assertTrue(md.contains("1 method changed:"), md);  // the newly reachable method is not counted
-    assertTrue(md.contains("## Newly reachable") && md.contains("`Pricing.price()` (was isolated"), md);
+    assertTrue(md.contains("Read 1 method closely."), md);  // the newly reachable method is not counted
+    assertTrue(md.contains("**Newly reachable** (1)") && md.contains("`Pricing.price()` was isolated"), md);
     assertTrue(Report.json(d).contains("\"reached\":[{\"method\":\"Pricing#price()J\""), Report.json(d));
   }
 
@@ -146,5 +146,89 @@ class DifferTest {
         new String[] {LEDGER, CHECKOUT, "public class Report { Checkout c; public String render() { return \"a\"; } }"});
     assertTrue(dep.shape.stream().anyMatch(s -> s.startsWith("new dependency Report -> Checkout")), dep.shape.toString());
     assertTrue(dep.shape.stream().anyMatch(s -> s.startsWith("position Checkout: LEAF -> TRUNK")), dep.shape.toString());
+  }
+
+  static final String ORDERS = """
+      public class Orders {
+        Ledger l;
+        public void place(long cents) { l.post(cents); }
+        public long total(long a, long b) { return a + b; }
+        public String label() { return "orders"; }
+      }""";
+  static final String SHOP = "public class Shop { Orders o; void buy() { o.place(5); } }";
+
+  @Test
+  void aRenamedClassWhoseCodeDidNotChangeIsAMoveNotAChange() throws IOException {
+    Differ d = diff(new String[] {LEDGER, ORDERS, SHOP},
+        new String[] {LEDGER, ORDERS.replace("class Orders", "class OrderBook"), SHOP.replace("Orders o", "OrderBook o")});
+    // Neither the renamed class nor Shop, whose only edit is the new name, has anything to read.
+    assertTrue(d.changes.isEmpty(), d.changes.toString());
+    assertEquals(1, d.moves.size());
+    Differ.Move m = d.moves.get(0);
+    assertEquals("Orders", m.from());
+    assertEquals("OrderBook", m.to());
+    assertEquals(m.methods(), m.unchanged());
+    assertEquals(java.util.List.of("place"), m.carried().stream()
+        .filter(c -> c.verdict() == Analysis.Verdict.ON_PATH).map(c -> c.method().name()).toList());
+    assertTrue(d.shape.contains("public type moved Orders -> OrderBook"), d.shape.toString());
+    String md = Report.markdown(d);
+    assertTrue(md.contains("1 class moved without changes.") && md.contains("`Orders` → `OrderBook`"), md);
+  }
+
+  @Test
+  void anEditInsideAMovedClassIsReportedAgainstWhatTheMethodWas() throws IOException {
+    Differ d = diff(new String[] {LEDGER, ORDERS, SHOP},
+        new String[] {LEDGER, ORDERS.replace("class Orders", "class OrderBook").replace("l.post(cents)", "l.post(cents + 1)"),
+            SHOP.replace("Orders o", "OrderBook o")});
+    Change c = only(d);
+    assertEquals("OrderBook", c.method().owner());
+    assertEquals("changed", c.kind());
+    assertEquals("Orders", c.was().owner());
+    assertEquals(Bucket.MUST, c.bucket());
+    assertEquals(d.moves.get(0).methods() - 1, d.moves.get(0).unchanged());  // all but place()
+  }
+
+  @Test
+  void twoSmallClassesThatOnlyLookAlikeAreNotAMove() throws IOException {
+    Differ d = diff(new String[] {LEDGER, "public class Alpha { }"}, new String[] {LEDGER, "public class Beta { }"});
+    assertTrue(d.moves.isEmpty());
+    assertEquals(java.util.List.of("Alpha:removed", "Beta:added"),
+        d.changes.stream().map(c -> c.method().owner() + ":" + c.kind()).sorted().toList());
+  }
+
+  @Test
+  void eachChangeIsShownWithItsOwnLinesOfTheSourceDiff() throws IOException {
+    String before = "public class Report {\n  public String render() {\n    return \"a\";\n  }\n"
+        + "  public String title() {\n    return \"t\";\n  }\n}\n";
+    String after = before.replace("return \"a\"", "return \"b\"").replace("return \"t\"", "return \"u\"");
+    String patch = """
+        diff --git a/src/main/java/Report.java b/src/main/java/Report.java
+        index 1111111..2222222 100644
+        --- a/src/main/java/Report.java
+        +++ b/src/main/java/Report.java
+        @@ -1,8 +1,8 @@
+         public class Report {
+           public String render() {
+        -    return "a";
+        +    return "b";
+           }
+           public String title() {
+        -    return "t";
+        +    return "u";
+           }
+        """;
+    Analysis base = Compiler.analyze(LEDGER, before);
+    Analysis head = Compiler.analyze(LEDGER, after);
+    Differ d = new Differ(base, head);
+    d.attach(SourceDiff.parse(patch), base, head);
+    assertEquals(2, d.changes.size());
+    for (Change c : d.changes) {
+      java.util.List<String> edits = d.lines.get(c.method()).stream().filter(l -> l.kind() != ' ')
+          .map(l -> l.kind() + l.text().strip()).toList();
+      // Each method gets its own edit and not its neighbour's.
+      assertEquals(c.method().name().equals("render") ? java.util.List.of("-return \"a\";", "+return \"b\";")
+          : java.util.List.of("-return \"t\";", "+return \"u\";"), edits);
+    }
+    assertTrue(Report.json(d).contains("\"lines\":[["), Report.json(d));
   }
 }

@@ -14,7 +14,7 @@ public final class Main {
       Usage:
         skimit analyze <classes-dir|jar>... [--policy FILE] [--json FILE] [--html FILE] [--list]
         skimit diff --base <classes-dir|jar>... --head <classes-dir|jar>...
-                      [--policy FILE] [--json FILE] [--html FILE] [--exit-code]
+                      [--policy FILE] [--json FILE] [--html FILE] [--diff FILE] [--exit-code]
         skimit verify <classes-dir|jar>... --trace FILE [--policy FILE]
 
       Options:
@@ -24,6 +24,8 @@ public final class Main {
         --root-ratio R    share of classes that must depend on a class to call it ROOT (default 0.10)
         --json FILE       also write the result as JSON
         --html FILE       also write an interactive map of the result as one HTML page
+        --diff FILE       diff: the source diff (git diff base head), so the report shows each
+                          changed method's own lines; verdicts never depend on it
         --list            analyze: print every method with its verdict and witness
         --exit-code       diff: exit 1 when anything lands in "must review"
         --agent-config F  analyze: write the configuration for skimit-agent.jar, which records a
@@ -35,6 +37,9 @@ public final class Main {
       """;
 
   public static void main(String[] args) {
+    // The manifest is Markdown with arrows in it; write it as UTF-8 whatever the locale says.
+    System.setOut(new java.io.PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), true,
+        java.nio.charset.StandardCharsets.UTF_8));
     try {
       System.exit(run(args));
     } catch (IOException | IllegalArgumentException e) {
@@ -55,6 +60,7 @@ public final class Main {
     Path policyFile = null;
     Path json = null;
     Path html = null;
+    Path sourceDiff = null;
     Path agentConfig = null;
     List<Path> traces = new ArrayList<>();
     double rootRatio = 0.10;
@@ -69,6 +75,7 @@ public final class Main {
         case "--policy" -> policyFile = Path.of(value(args, ++i));
         case "--json" -> json = Path.of(value(args, ++i));
         case "--html" -> html = Path.of(value(args, ++i));
+        case "--diff" -> sourceDiff = Path.of(value(args, ++i));
         case "--agent-config" -> agentConfig = Path.of(value(args, ++i));
         case "--trace" -> traces.add(Path.of(value(args, ++i)));
         case "--root-ratio" -> rootRatio = Double.parseDouble(value(args, ++i));
@@ -108,6 +115,7 @@ public final class Main {
         Analysis before = new Analysis(Program.load(base), policy, rootRatio, callsOnly);
         Analysis after = new Analysis(Program.load(head), policy, rootRatio, callsOnly);
         Differ d = new Differ(before, after);
+        if (sourceDiff != null) d.attach(SourceDiff.parse(Files.readString(sourceDiff)), before, after);
         warnIfNoSinks(after);
         System.out.print(Report.markdown(d));
         if (json != null) Files.writeString(json, Report.json(d));

@@ -17,7 +17,11 @@ import java.util.stream.Collectors;
 public final class Report {
   private Report() {}
 
-  static final String DEFAULT_NOTE = "No sinks are declared, so the built-in rule is in use: every data write is critical"
+  static final String DEFAULT_NOTE = "<sub>Critical here means data writes, the built-in rule: repositories, mappers,"
+      + " DAOs, and clients such as JDBC, JPA, MyBatis, MongoDB, DynamoDB and S3. Declare your own with a policy file or"
+      + " `@Critical`.</sub>";
+  /** The same note for the analysis summary, which is read in a terminal. */
+  static final String DEFAULT_NOTE_PLAIN = "No sinks are declared, so the built-in rule is in use: every data write is critical"
       + " (repositories, mappers, DAOs, and common clients such as JDBC, JPA, MyBatis, MongoDB, DynamoDB and S3)."
       + " Declare your own with `--policy` or `@Critical`, or pass `--no-default-sinks` to turn this off.";
   static final String NO_SINKS_NOTE = "**No sinks found, so nothing is critical and every method is isolated.**"
@@ -26,7 +30,7 @@ public final class Report {
 
   public static String summary(Analysis a, boolean listMethods) {
     StringBuilder sb = new StringBuilder("# skimit analysis\n\n");
-    if (a.usingDefaultSinks) sb.append(DEFAULT_NOTE).append("\n\n");
+    if (a.usingDefaultSinks) sb.append(DEFAULT_NOTE_PLAIN).append("\n\n");
     if (a.sinks.isEmpty()) sb.append(NO_SINKS_NOTE).append("\n\n");
     sb.append("## Sinks\n\n");
     if (a.sinks.isEmpty()) sb.append("None declared. Add `@Critical` or a policy file; without sinks nothing is critical.\n");
@@ -65,68 +69,187 @@ public final class Report {
     return sb.toString();
   }
 
+  // ---- The review, in words ------------------------------------------------------------------
+
+  static final String MUST_TITLE = "Must read";
+  static final String SHOULD_TITLE = "Worth a look";
+  static final String SKIP_TITLE = "Skim";
+
+  /** The answer in one or two sentences: what to read, and how closely. */
+  public static String headline(Differ d) {
+    long must = d.count(Bucket.MUST);
+    long should = d.count(Bucket.SHOULD);
+    List<String> out = new ArrayList<>();
+    if (d.noSinks) out.add("Nothing is critical here: no sinks were found, so every method is isolated.");
+    if (!d.policy.isEmpty()) out.add("What counts as critical changed: review that first.");
+    if (!d.moves.isEmpty()) {
+      long same = d.moves.stream().filter(m -> m.unchanged() == m.methods()).count();
+      out.add(d.moves.size() == 1
+          ? (same == 1 ? "1 class moved without changes." : "1 class moved, with some changes.")
+          : d.moves.size() + " classes moved" + (same == d.moves.size() ? " without changes." : ", " + same + " of them without changes."));
+    }
+    if (must > 0) {
+      out.add("Read " + methods(must) + " closely" + (should > 0 ? " and glance at " + should : "") + ".");
+    } else if (should > 0) {
+      out.add("Nothing changed can reach anything critical directly. Glance at " + methods(should) + ".");
+    } else if (!d.changes.isEmpty() && !d.noSinks) {
+      out.add("Nothing changed can reach anything critical: skim " + (d.changes.size() == 1 ? "it." : "them."));
+    } else if (d.changes.isEmpty() && d.moves.isEmpty() && d.policy.isEmpty()) {
+      out.add("Nothing to review: no compiled method changed.");
+    }
+    if (!d.reached.isEmpty()) {
+      out.add(d.reached.size() == 1 ? "1 unchanged method now takes part in a critical flow: read it once."
+          : d.reached.size() + " unchanged methods now take part in a critical flow: read them once.");
+    }
+    return String.join(" ", out);
+  }
+
+  private static String methods(long n) {
+    return n + (n == 1 ? " method" : " methods");
+  }
+
+  /** What a domain is called in a sentence: "a data write", "a MONEY sink". */
+  static String domainPhrase(Set<String> domains) {
+    if (domains.isEmpty()) return "something critical";
+    return domains.stream().map(d -> d.equals("DATA_WRITE") ? "a data write" : "a " + d + " sink")
+        .collect(Collectors.joining(" and "));
+  }
+
+  /** Why to read a change, as a sentence for someone who has not read the docs. */
+  public static String says(Change c) {
+    String sentence;
+    if (c.verdict() == Verdict.ON_PATH && c.reason().equals("is a critical sink")) {
+      sentence = "Is " + domainPhrase(c.domains()) + " itself";
+    } else if (c.verdict() == Verdict.ON_PATH && c.reason().equals("can reach a critical sink")) {
+      sentence = "Reaches " + domainPhrase(c.domains());
+    } else if (c.verdict() == Verdict.ON_PATH && c.reason().equals("before removal, can reach a critical sink")) {
+      sentence = "Reached " + domainPhrase(c.domains()) + " before it was removed";
+    } else {
+      String r = plainReason(c.reason(), c.method());
+      if (r.startsWith("before removal, ")) r = "before it was removed, it " + r.substring("before removal, ".length());
+      sentence = Character.toUpperCase(r.charAt(0)) + r.substring(1);
+    }
+    if (!c.newDomains().isEmpty()) sentence += ", which it could not before this change";
+    return sentence;
+  }
+
+  private static final java.util.regex.Pattern FRAMEWORK_CALL =
+      java.util.regex.Pattern.compile("runs when a framework or library calls (.+) through (.+), at a time the analysis cannot see");
+
+  /** An analysis reason, shortened where it repeats the method's own name. */
+  static String plainReason(String reason, MethodKey self) {
+    java.util.regex.Matcher m = FRAMEWORK_CALL.matcher(reason);
+    if (m.find()) {
+      String how = m.group(2);
+      String who = m.group(1).equals(self.pretty()) ? "it" : "`" + m.group(1) + "`";
+      return reason.substring(0, m.start()) + "a framework or library calls " + who + " through " + how
+          + ", at a time skimit cannot see";
+    }
+    return reason.replace("a call the analysis cannot follow", "a call skimit cannot follow");
+  }
+
+  /** The steps from a method to the sink it reaches, without the method itself; empty if it reaches none. */
+  public static List<String> path(Change c) {
+    if (c.verdict() != Verdict.ON_PATH || c.witness().size() < 2) return List.of();
+    return c.witness().subList(1, c.witness().size()).stream().map(Report::shortName).toList();
+  }
+
+  /** {@code Ledger.post}: a method by its class and name, for a path where the types add nothing. */
+  static String shortName(MethodKey m) {
+    String p = m.pretty();
+    int paren = p.indexOf('(');
+    return paren < 0 ? p : p.substring(0, paren);
+  }
+
+  /** The class part of a method's short form: {@code Ledger} for {@code Ledger.post(long)}. */
+  static String classOf(MethodKey m) {
+    String p = shortName(m);
+    int dot = p.lastIndexOf('.', p.endsWith("]") ? p.lastIndexOf('[') : p.length());
+    return dot < 0 ? p : p.substring(0, dot);
+  }
+
   public static String markdown(Differ d) {
-    StringBuilder sb = new StringBuilder("# Review manifest\n\n");
-    if (d.noSinks) sb.append(NO_SINKS_NOTE).append("\n\n");
-    sb.append(d.changes.size()).append(d.changes.size() == 1 ? " method" : " methods").append(" changed: **").append(d.count(Bucket.MUST)).append(" must review**, ")
-        .append(d.count(Bucket.SHOULD)).append(" should review, ").append(d.count(Bucket.SKIP)).append(" isolated.\n");
-    if (d.usingDefaultSinks) sb.append("\n").append(DEFAULT_NOTE).append("\n");
+    StringBuilder sb = new StringBuilder("## skimit: ").append(headline(d)).append("\n");
     if (!d.policy.isEmpty()) {
-      sb.append("\n## Policy changes (always reviewed)\n\n");
+      sb.append("\n**What counts as critical changed** (").append(d.policy.size()).append("): always reviewed.\n\n");
       for (String p : d.policy) sb.append("- ").append(p).append('\n');
     }
-    section(sb, d, Bucket.MUST, "Must review: on a critical path");
-    // Methods that were isolated are listed below with their reason; the sentence names the rest.
+    section(sb, d, Bucket.MUST, MUST_TITLE, "can reach something critical. Read every line.");
+    section(sb, d, Bucket.SHOULD, SHOULD_TITLE, "skimit cannot rule these out. A quick read is enough.");
+    if (!d.reached.isEmpty()) {
+      sb.append("\n**Newly reachable** (").append(d.reached.size())
+          .append("): unchanged, so the diff will not show them, but a change elsewhere connects them to a critical flow."
+              + " Read them once.\n\n");
+      for (Differ.Reached r : d.reached) {
+        sb.append("- `").append(r.method().pretty()).append("` was isolated  \n  ")
+            .append(Character.toUpperCase(r.reason().charAt(0))).append(r.reason().substring(1)).append(".\n");
+      }
+    }
+    // Ripple: untouched methods that now reach a sink, beyond those listed as newly reachable.
     Set<MethodKey> listed = d.reached.stream().map(Differ.Reached::method).collect(Collectors.toSet());
     List<MethodKey> ripple = d.ripple.stream().filter(m -> !listed.contains(m)).toList();
     if (!ripple.isEmpty()) {
-      sb.append("\nBecause of these changes, ").append(ripple.size())
-          .append(" untouched method(s) can now reach a sink: ")
+      sb.append("\nBecause of these changes, ").append(methods(ripple.size()))
+          .append(" that did not change can now reach a sink: ")
           .append(ripple.stream().limit(10).map(m -> "`" + m.pretty() + "`").collect(Collectors.joining(", ")))
           .append(ripple.size() > 10 ? ", ...\n" : "\n");
     }
-    section(sb, d, Bucket.SHOULD, "Should review: takes part in a critical flow, or cannot be proven clear");
-    if (!d.reached.isEmpty()) {
-      sb.append("\n## Newly reachable: unchanged, but no longer isolated\n\n")
-          .append("These bodies did not change, but a change elsewhere connects them to a critical flow."
-              + " Read them once.\n\n");
-      for (Differ.Reached r : d.reached) {
-        sb.append("- `").append(r.method().pretty()).append("` (was isolated, now ")
-            .append(r.now() == Analysis.Verdict.ON_PATH ? "on a critical path" : r.now() == Analysis.Verdict.INFLUENCES
-                ? "in a critical flow" : "unproven").append(")")
-            .append("\n  - ").append(r.reason());
-        if (!r.explanation().isEmpty()) sb.append("\n  - ").append(r.explanation());
+    if (!d.moves.isEmpty()) {
+      sb.append("\n**Moved** (").append(d.moves.size()).append(d.moves.size() == 1 ? " class" : " classes")
+          .append("): compared with what they were, so only real edits are listed above.\n\n");
+      for (Differ.Move m : d.moves) {
+        String[] n = Differ.shortened(m.from(), m.to());
+        sb.append("- `").append(n[0]).append("` → `").append(n[1]).append("`: ");
+        sb.append(m.unchanged() == m.methods() ? (m.methods() == 1 ? "its method is unchanged" : "all " + m.methods() + " methods unchanged")
+            : m.unchanged() + " of " + m.methods() + " methods unchanged");
+        long critical = m.carried().stream().filter(c -> c.verdict() == Verdict.ON_PATH).count();
+        if (critical > 0) sb.append("; ").append(critical).append(critical == 1 ? " of them still reaches " : " of them still reach ")
+            .append(domainPhrase(m.carried().stream().filter(c -> c.verdict() == Verdict.ON_PATH)
+                .flatMap(c -> c.domains().stream()).collect(Collectors.toCollection(java.util.TreeSet::new))));
         sb.append('\n');
       }
     }
-    if (!d.shape.isEmpty()) {
-      sb.append("\n## Shape changes: review the structure, not the bodies\n\n");
-      for (String s : d.shape) sb.append("- ").append(s).append('\n');
+    List<Change> skim = d.changes.stream().filter(c -> c.bucket() == Bucket.SKIP).toList();
+    if (!skim.isEmpty()) {
+      sb.append("\n<details><summary><b>").append(SKIP_TITLE).append("</b> (").append(skim.size())
+          .append("): nothing connects these to anything critical</summary>\n\n");
+      java.util.Map<String, List<Change>> byClass = new java.util.TreeMap<>();
+      for (Change c : skim) byClass.computeIfAbsent(classOf(c.method()), k -> new ArrayList<>()).add(c);
+      for (Map.Entry<String, List<Change>> e : byClass.entrySet()) {
+        Map<String, Long> kinds = e.getValue().stream().collect(Collectors.groupingBy(Change::kind, java.util.TreeMap::new, Collectors.counting()));
+        sb.append("- `").append(e.getKey()).append("`: ")
+            .append(kinds.entrySet().stream().map(k -> k.getValue() + " " + k.getKey()).collect(Collectors.joining(", ")))
+            .append('\n');
+      }
+      sb.append("\n</details>\n");
     }
-    section(sb, d, Bucket.SKIP, "Isolated: nothing connects these to a sink, body review can be skipped");
+    if (!d.shape.isEmpty()) {
+      sb.append("\n<details><summary><b>Structure</b> (").append(d.shape.size())
+          .append("): public API and dependencies. Judge the design, not the bodies</summary>\n\n");
+      for (String s : d.shape) sb.append("- ").append(s).append('\n');
+      sb.append("\n</details>\n");
+    }
+    if (d.usingDefaultSinks && !d.noSinks) sb.append("\n").append(DEFAULT_NOTE).append("\n");
+    if (d.noSinks) sb.append("\n").append(NO_SINKS_NOTE).append("\n");
     return sb.toString();
   }
 
-  private static void section(StringBuilder sb, Differ d, Bucket bucket, String title) {
+  /** The most methods listed in a bucket; the HTML report has the rest. */
+  static final int LISTED = 60;
+
+  private static void section(StringBuilder sb, Differ d, Bucket bucket, String title, String hint) {
     List<Change> in = d.changes.stream().filter(c -> c.bucket() == bucket).toList();
     if (in.isEmpty()) return;
-    sb.append("\n## ").append(title).append("\n\n");
-    for (Change c : in) {
-      sb.append("- `").append(c.method().pretty()).append("` (").append(c.kind()).append(")");
-      if (!c.domains().isEmpty()) sb.append(" ").append(c.domains());
-      if (!c.newDomains().isEmpty()) sb.append(" **NEW PATH into ").append(String.join(", ", c.newDomains())).append("**");
-      if (bucket != Bucket.SKIP) {
-        sb.append("\n  - ").append(c.reason());
-        if (c.proofs().size() > 1) {
-          for (Map.Entry<String, List<MethodKey>> p : c.proofs().entrySet()) {
-            sb.append("\n  - ").append(p.getKey()).append(": ").append(Analysis.explainCalls(p.getValue()));
-          }
-        } else if (!c.explanation().isEmpty()) {
-          sb.append("\n  - ").append(c.explanation());
-        }
-      }
-      sb.append('\n');
+    sb.append("\n**").append(title).append("** (").append(in.size()).append("): ").append(hint).append("\n\n");
+    for (Change c : in.subList(0, Math.min(in.size(), LISTED))) {
+      sb.append("- `").append(c.method().pretty()).append("` ").append(c.kind());
+      if (c.was() != null) sb.append(" (was `").append(shortName(c.was())).append("`)");
+      sb.append("  \n  ").append(says(c));
+      List<String> path = path(c);
+      if (!path.isEmpty()) sb.append(": ").append(path.stream().map(x -> "`" + x + "`").collect(Collectors.joining(" → ")));
+      sb.append(path.isEmpty() ? ".\n" : "\n");
     }
+    if (in.size() > LISTED) sb.append("- and ").append(in.size() - LISTED).append(" more, listed in the full report\n");
   }
 
   private static String pct(int part, int whole) {
@@ -186,18 +309,34 @@ public final class Report {
   private static String json(Differ d, Ids ids) {
     List<String> changes = new ArrayList<>();
     for (Change c : d.changes) {
+      List<SourceDiff.Line> own = d.lines.get(c.method());
       changes.add("{\"method\":" + ref(ids, c.method()) + "," + kv("kind", c.kind()) + "," + kv("bucket", c.bucket().name())
           + "," + kv("verdict", c.verdict().name()) + ",\"domains\":" + arr(c.domains()) + ",\"newDomains\":" + arr(c.newDomains())
-          + "," + kv("reason", c.reason()) + "," + kv("name", c.method().pretty())
-          + ",\"witness\":" + refs(ids, c.witness()) + proofs(ids, c.proofs()) + "}");
+          + "," + kv("reason", c.reason()) + "," + kv("says", says(c)) + ",\"path\":" + arr(path(c))
+          + "," + kv("name", c.method().pretty())
+          + (c.was() == null ? "" : ",\"was\":" + ref(ids, c.was()))
+          + ",\"witness\":" + refs(ids, c.witness()) + proofs(ids, c.proofs())
+          + (own == null ? "" : ",\"lines\":[" + own.stream().map(l -> "[" + str(String.valueOf(l.kind())) + "," + l.before()
+              + "," + l.after() + "," + str(l.text()) + "]").collect(Collectors.joining(",")) + "]")
+          + "}");
     }
-    return "{\"mustReview\":" + d.count(Bucket.MUST) + ",\"shouldReview\":" + d.count(Bucket.SHOULD)
+    List<String> moves = new ArrayList<>();
+    for (Differ.Move m : d.moves) {
+      moves.add("{" + kv("from", m.from()) + "," + kv("to", m.to()) + ",\"methods\":" + m.methods()
+          + ",\"unchanged\":" + m.unchanged() + ",\"carried\":[" + m.carried().stream().map(c -> "{\"method\":" + ref(ids, c.method())
+              + "," + kv("name", c.method().pretty()) + "," + kv("verdict", c.verdict().name()) + ",\"domains\":" + arr(c.domains())
+              + ",\"path\":" + arr(c.verdict() == Verdict.ON_PATH && c.witness().size() > 1
+                  ? c.witness().subList(1, c.witness().size()).stream().map(Report::shortName).toList() : List.of())
+              + "}").collect(Collectors.joining(",")) + "]}");
+    }
+    return "{" + kv("headline", headline(d)) + ",\"mustReview\":" + d.count(Bucket.MUST) + ",\"shouldReview\":" + d.count(Bucket.SHOULD)
         + ",\"isolated\":" + d.count(Bucket.SKIP) + ",\"noSinks\":" + d.noSinks + ",\"defaultSinks\":" + d.usingDefaultSinks
         + ",\"policy\":" + arr(d.policy) + ",\"shape\":" + arr(d.shape)
         + ",\"ripple\":" + refs(ids, d.ripple)
         + ",\"reached\":[" + d.reached.stream().map(r -> "{\"method\":" + ref(ids, r.method()) + "," + kv("verdict", r.now().name())
             + "," + kv("was", "ISOLATED") + "," + kv("reason", r.reason()) + "," + kv("name", r.method().pretty())
             + ",\"witness\":" + refs(ids, r.witness()) + "}").collect(Collectors.joining(",")) + "]"
+        + ",\"moves\":[" + String.join(",", moves) + "]"
         + ",\"changes\":[" + String.join(",", changes) + "]}\n";
   }
 
