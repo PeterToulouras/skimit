@@ -121,7 +121,8 @@ public final class Report {
     if (c.verdict() == Verdict.ON_PATH && c.reason().equals("is a critical sink")) {
       sentence = "Is " + domainPhrase(c.domains()) + " itself";
     } else if (c.verdict() == Verdict.ON_PATH && c.reason().equals("can reach a critical sink")) {
-      sentence = "Reaches " + domainPhrase(c.domains());
+      sentence = c.newDomains().isEmpty() ? "Reaches " + domainPhrase(c.domains())
+          : "Now reaches " + domainPhrase(c.newDomains()) + ", which it could not before this change";
     } else if (c.verdict() == Verdict.ON_PATH && c.reason().equals("before removal, can reach a critical sink")) {
       sentence = "Reached " + domainPhrase(c.domains()) + " before it was removed";
     } else {
@@ -129,7 +130,6 @@ public final class Report {
       if (r.startsWith("before removal, ")) r = "before it was removed, it " + r.substring("before removal, ".length());
       sentence = Character.toUpperCase(r.charAt(0)) + r.substring(1);
     }
-    if (!c.newDomains().isEmpty()) sentence += ", which it could not before this change";
     return sentence;
   }
 
