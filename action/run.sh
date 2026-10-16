@@ -85,7 +85,9 @@ fi
 
 args=(diff --base "${base_classes[@]}" --head "${head_classes[@]}" --json "$out/manifest.json" --html "$out/report.html")
 # The source diff lets the report show each changed method's own lines; verdicts never depend on it.
-if git -C "$head_dir" diff --no-color --no-ext-diff "$base_sha" HEAD -- . > "$out/changes.diff" 2>/dev/null; then
+# Releases before 0.1.8 do not know --diff, and a workflow may pin one while using a newer Action.
+if java -jar "$jar" --help 2>/dev/null | grep -q -- '--diff FILE' \
+    && git -C "$head_dir" diff --no-color --no-ext-diff "$base_sha" HEAD -- . > "$out/changes.diff" 2>/dev/null; then
   args+=(--diff "$out/changes.diff")
 fi
 [ -n "${SKIMIT_POLICY:-}" ] && args+=(--policy "$head_dir/$SKIMIT_POLICY")
