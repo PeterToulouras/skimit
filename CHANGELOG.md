@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.8
 
 - **A report that says what to read.** The manifest and the HTML report open with one sentence
   ("Read 1 method closely and glance at 1."), name the buckets *Must read*, *Worth a look* and
