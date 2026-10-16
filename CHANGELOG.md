@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **A report that says what to read.** The manifest and the HTML report open with one sentence
+  ("Read 1 method closely and glance at 1."), name the buckets *Must read*, *Worth a look* and
+  *Skim*, and give each method a reason in words with the path to what it reaches
+  ("Reaches a data write: `ClinicServiceImpl.savePet` → `PetRepository.save`"). Skimmed methods
+  and structure changes are folded away by class. The HTML report's Review view groups methods by
+  class with the proof a click away; the code map moves to its own tab with plain labels. The JSON
+  gains `headline`, and `says` and `path` for each change.
+- **Each changed method's own lines.** With `--diff` (a `git diff` of the sources), the report
+  shows the lines of the diff that fall within each changed method, found from the source file and
+  line numbers in its bytecode. Verdicts never depend on it. The GitHub Action passes it.
+- **Moved and renamed classes are compared with what they were.** A class that existed only after
+  the change is paired with the one that existed only before it whose methods it repeats once the
+  new name is read as the old one. Methods that did not change are no longer listed as removed and
+  added; an edit inside a moved class is reported against the method it was (`was` in the JSON),
+  and the moves are listed on their own (`moves`). On a PetClinic REST commit that moved eight
+  controllers into a `v1` package, the manifest went from 134 changed methods with 42 to review
+  closely to 48 changed methods with none.
+
 - **A method that hands an object it was given to a library calls that object's callbacks.**
   0.1.7 linked a callback parameter to what callers pass in only for `java.util.function` types,
   `Runnable` and `Callable`. Now any parameter of a library type counts: a method that runs it or

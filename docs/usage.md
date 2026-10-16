@@ -17,9 +17,26 @@ java -jar skimit.jar diff --base base/target/classes --head head/target/classes 
     --json manifest.json --exit-code
 ```
 
-Add `--html report.html` to either command for the interactive report: what to review and why, the proof
-for whichever method you select, and a map of every class coloured by verdict.
-It is one self-contained file, so a CI job can attach it to the build.
+Add `--html report.html` to either command for the interactive report. For a diff it opens on
+what to read: one sentence, then each method worth reading with the reason in words and the path
+to what it reaches, with the proof a click away. A second tab maps every class and method by
+verdict. It is one self-contained file, so a CI job can attach it to the build.
+
+Pass the source diff as well and the report shows each changed method's own lines next to the
+reason to read it:
+
+```
+git diff base-sha head-sha > changes.diff
+java -jar skimit.jar diff --base ... --head ... --diff changes.diff --html report.html
+```
+
+skimit finds a method's lines from the source file and line numbers in its bytecode, so the
+classes need their debug information (javac and Gradle keep it by default). The diff is only shown,
+never analysed: verdicts come from the bytecode alone. The GitHub Action passes it for you.
+
+A class that moved to another package or was renamed is compared with what it was. Its methods
+whose code did not change are not listed as changes, and an edit inside it is reported against the
+method it was; the manifest lists the moves on their own.
 
 Inputs are class directories or jars, as many as you like, from any build tool: Maven puts classes
 in `target/classes`, Gradle in `build/classes/java/main`, one per module. `--exit-code` returns 1 when anything

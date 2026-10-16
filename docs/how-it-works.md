@@ -70,6 +70,19 @@ is known instead by its enclosing method and its place among that method's lambd
 type, and is matched across the change by an identical body first. Adding a lambda to one method
 leaves the others, and their lambdas, unchanged.
 
+A class that moved or was renamed is matched with what it was. Each top-level class that exists
+only after the change is paired with one that existed only before it, when at least half the
+methods of the larger of the two are identical once the new class name is read as the old one,
+and either two of them are ordinary methods (not constructors or lambdas) or one name contains the
+other. Two tiny classes that each hold only a default constructor are alike without being the same
+class. Once paired, every method is compared with the method it was, and the same reading of names
+applies to code elsewhere that only switched to the new name, so a pure move leaves nothing to read.
+
+The report can show each change's own lines of a source diff given with `--diff`. Debug
+information is dropped before anything is compared; it is read separately, only to find the source
+file and line range each method was compiled from, and the lines of the diff within that range are
+shown with the method.
+
 ---
 
 [Back to the README](../README.md)

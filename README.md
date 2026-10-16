@@ -24,7 +24,7 @@ can reach something critical.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/report-dark.png">
-    <img src="docs/report-light.png" alt="The skimit report for a pull request: one method must be reviewed, with the call chain that proves it" width="820">
+    <img src="docs/report-light.png" alt="The skimit report for a pull request: one method to read closely, with the reason, the path to the critical call and the lines that changed" width="820">
   </picture>
 </p>
 
@@ -45,12 +45,16 @@ With Gradle, point it at `build/classes/java/main` instead.
 For the example pull request in this repository, it prints:
 
 ```
-7 methods changed: 1 must review, 3 should review, 3 isolated.
+## skimit: Read 1 method closely and glance at 3. 4 unchanged methods now take part in a critical flow: read them once.
 
-Must review: on a critical path
-- SalesReport.render(List) (changed) [MONEY] NEW PATH into MONEY
-  - SalesReport.render(List) calls Ledger.post(String, long)
+**Must read** (1): can reach something critical. Read every line.
+
+- `SalesReport.render(List)` changed
+  Now reaches a MONEY sink, which it could not before this change: `Ledger.post`
 ```
+
+Add `--diff changes.diff` (a `git diff` of the same change) and the HTML report shows each
+method's own lines next to the reason to read it.
 
 That is all a first run on your own code needs. No annotations, no configuration: out of the
 box, every data write counts as critical: through your repositories, mappers and DAOs, or
@@ -109,12 +113,14 @@ It only reports unless you ask it to fail the job or comment on the pull request
 
 | Bucket | What it means | What to do |
 |---|---|---|
-| **Must review** | The method can reach something you marked critical. | Read it line by line. |
-| **Should review** | It takes part in a critical flow, or cannot be proven clear. | Check it. |
-| **Isolated** | Nothing connects it to anything critical. | Skim the body. |
+| **Must read** | The method can reach something you marked critical. | Read it line by line. |
+| **Worth a look** | It takes part in a critical flow, or cannot be proven clear. | Check it. |
+| **Skim** | Nothing connects it to anything critical (`ISOLATED`). | Skim the body. |
 
 Changes to class structure and public API are listed separately, so a senior reviewer can judge the
-design without reading every body.
+design without reading every body. Unchanged methods that a change newly connects to a critical
+flow are listed too, and a class that only moved or was renamed is compared with what it was
+instead of counting as all new.
 
 ## Does it work?
 

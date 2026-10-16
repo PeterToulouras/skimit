@@ -84,6 +84,10 @@ if [ ${#head_classes[@]} -eq 0 ] || [ ${#base_classes[@]} -eq 0 ]; then
 fi
 
 args=(diff --base "${base_classes[@]}" --head "${head_classes[@]}" --json "$out/manifest.json" --html "$out/report.html")
+# The source diff lets the report show each changed method's own lines; verdicts never depend on it.
+if git -C "$head_dir" diff --no-color --no-ext-diff "$base_sha" HEAD -- . > "$out/changes.diff" 2>/dev/null; then
+  args+=(--diff "$out/changes.diff")
+fi
 [ -n "${SKIMIT_POLICY:-}" ] && args+=(--policy "$head_dir/$SKIMIT_POLICY")
 java -jar "$jar" "${args[@]}" > "$out/manifest.md" || give_up "The analysis did not finish; the step log shows why."
 

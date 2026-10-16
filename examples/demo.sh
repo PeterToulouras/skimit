@@ -21,7 +21,8 @@ echo "=== analyze (base) ==="
 java -jar "$jar" analyze "$work/base/classes" --list
 echo
 echo "=== diff (base -> head) ==="
-java -jar "$jar" diff --base "$work/base/classes" --head "$work/head/classes" --html "$root/skimit-report.html"
+java -jar "$jar" diff --base "$work/base/classes" --head "$work/head/classes" \
+  --diff "$root/examples/pull-request.patch" --html "$root/skimit-report.html"
 echo
 echo "Interactive report written to $root/skimit-report.html"
 echo
