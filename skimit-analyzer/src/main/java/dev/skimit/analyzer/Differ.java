@@ -118,27 +118,33 @@ public final class Differ {
       add(m, m, null, "removed", b, base, Set.of(), bv == Verdict.ISOLATED ? null : "before removal, " + base.reason(m));
     }
 
+    // A sink in a class that moved is the same sink under its new name.
+    Set<MethodKey> stillSinks = new HashSet<>();
     for (Map.Entry<MethodKey, Set<String>> e : head.sinks.entrySet()) {
-      Set<String> before = base.sinks.get(e.getKey());
+      MethodKey was = renames.back(e.getKey());
+      Set<String> before = base.sinks.get(was);
+      if (before != null) stillSinks.add(was);
       if (before == null) policy.add("sink added: " + e.getKey().pretty() + " " + e.getValue());
       else if (!before.equals(e.getValue())) policy.add("sink domains changed: " + e.getKey().pretty() + " " + before + " -> " + e.getValue());
     }
     for (Map.Entry<MethodKey, Set<String>> e : base.sinks.entrySet()) {
-      if (!head.sinks.containsKey(e.getKey())) policy.add("sink removed: " + e.getKey().pretty() + " " + e.getValue());
+      if (!stillSinks.contains(e.getKey())) policy.add("sink removed: " + e.getKey().pretty() + " " + e.getValue());
     }
 
     for (Map.Entry<String, String> e : renames.map.entrySet()) {
       int methods = 0;
       int unchanged = 0;
       List<Carried> carried = new ArrayList<>();
-      for (MethodKey m : head.verdicts.keySet()) {
+      // Every method counts here, abstract ones too: an interface that moved is all signatures.
+      for (MethodKey m : head.hashes.keySet()) {
         if (!CallGraph.topLevel(m.owner()).equals(e.getKey())) continue;
         methods++;
-        MethodKey b = earlier.get(m);
-        if (b == null || !sameBody.test(b, m)) continue;
+        MethodKey b = earlier.getOrDefault(m, renames.back(m));
+        if (!base.hashes.containsKey(b) || !sameBody.test(b, m)) continue;
         unchanged++;
-        Verdict v = head.verdict(m);
-        if (v != Verdict.ISOLATED) carried.add(new Carried(m, v, v == Verdict.UNPROVEN ? Set.of() : head.domains(m), head.witness(m)));
+        Verdict v = head.sinks.containsKey(m) ? Verdict.ON_PATH : head.verdict(m);
+        Set<String> domains = head.sinks.containsKey(m) ? head.sinks.get(m) : v == Verdict.UNPROVEN ? Set.of() : head.domains(m);
+        if (v != Verdict.ISOLATED) carried.add(new Carried(m, v, domains, head.witness(m)));
       }
       moves.add(new Move(e.getValue().replace('/', '.'), e.getKey().replace('/', '.'), methods, unchanged, carried));
     }

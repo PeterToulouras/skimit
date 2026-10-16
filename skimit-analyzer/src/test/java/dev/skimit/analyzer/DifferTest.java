@@ -176,6 +176,17 @@ class DifferTest {
   }
 
   @Test
+  void aSinkWhoseClassWasRenamedIsStillTheSameSink() throws IOException {
+    String dao = "public class OrderDao { public void save(long o) {} public long find(int id) { return id; } public long count() { return 0; } }";
+    String svc = "public class Orders { OrderDao d; void place() { d.save(5); } }";
+    Differ d = diff(new String[] {dao, svc},
+        new String[] {dao.replace("OrderDao", "OrderMapper"), svc.replace("OrderDao", "OrderMapper")});
+    assertTrue(d.policy.isEmpty(), d.policy.toString());
+    assertTrue(d.changes.isEmpty(), d.changes.toString());
+    assertEquals("OrderDao", d.moves.get(0).from());
+  }
+
+  @Test
   void anEditInsideAMovedClassIsReportedAgainstWhatTheMethodWas() throws IOException {
     Differ d = diff(new String[] {LEDGER, ORDERS, SHOP},
         new String[] {LEDGER, ORDERS.replace("class Orders", "class OrderBook").replace("l.post(cents)", "l.post(cents + 1)"),

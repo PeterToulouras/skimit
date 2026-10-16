@@ -38,6 +38,10 @@ code.
   among that method's lambdas of the same type, matched across a change by its body first. Adding a
   lambda to a method no longer touches other methods, but reordering same-typed lambdas inside one
   method that also changes them can pair the wrong two.
+- **What a moved class carries besides its methods.** A class that moved or was renamed is
+  matched with what it was by its methods' bytecode. An annotation on the class itself, such as a
+  changed request path on a controller, is not compared; the move is still listed, so its new home
+  can be checked.
 - **Kotlin, Scala, Groovy.** They compile to bytecode and should load, but nothing has been tested.
 
 ## Roadmap

@@ -16,9 +16,16 @@
   the change is paired with the one that existed only before it whose methods it repeats once the
   new name is read as the old one. Methods that did not change are no longer listed as removed and
   added; an edit inside a moved class is reported against the method it was (`was` in the JSON),
-  and the moves are listed on their own (`moves`). On a PetClinic REST commit that moved eight
-  controllers into a `v1` package, the manifest went from 134 changed methods with 42 to review
-  closely to 48 changed methods with none.
+  and the moves are listed on their own (`moves`). A sink in a renamed class is the same sink, so
+  renaming `OrderDao` to `OrderMapper` is no longer a policy change. On a PetClinic REST commit
+  that moved eight controllers into a `v1` package, the manifest went from 134 changed methods with
+  42 to read closely to 48 with none. On the replay of the 575 commits, 23 commits move or rename
+  classes; across them, changed methods fall from 4,676 to 1,436 and must-read methods from 583 to
+  256, and sink changes reported from 148 to 6. Seven commits leave must review: six to nothing to
+  read and one to should review, for the real edits it also makes. In all seven, each method that
+  left must review either sits in a moved class with an identical body or is code elsewhere whose
+  only edit is the moved class's new name, as the source diffs confirm. No other commit moves
+  bucket.
 
 - **A method that hands an object it was given to a library calls that object's callbacks.**
   0.1.7 linked a callback parameter to what callers pass in only for `java.util.function` types,
