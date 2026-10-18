@@ -22,12 +22,16 @@ public final class Program {
   public final Map<String, ClassNode> classes = new TreeMap<>();
   /** The source file each class was compiled from, as javac or kotlinc recorded it ("Foo.java"). */
   public final Map<String, String> sourceFiles = new TreeMap<>();
+  /** Which input each class came from, by position: classes from different builds of a multi-module project. */
+  public final Map<String, Integer> origin = new java.util.HashMap<>();
   /** The source lines each method's code was compiled from: its first and its last. */
   public final Map<MethodKey, int[]> lines = new java.util.HashMap<>();
 
   public static Program load(List<Path> inputs) throws IOException {
     Program p = new Program();
-    for (Path in : inputs) {
+    for (int i = 0; i < inputs.size(); i++) {
+      Path in = inputs.get(i);
+      p.current = i;
       if (Files.isDirectory(in)) {
         try (Stream<Path> walk = Files.walk(in)) {
           for (Path f : (Iterable<Path>) walk.filter(x -> x.toString().endsWith(".class"))::iterator) {
@@ -53,6 +57,9 @@ public final class Program {
     return p;
   }
 
+  /** The input being loaded. */
+  private int current;
+
   private void add(InputStream is) throws IOException {
     ClassNode cn = new ClassNode();
     ClassReader reader = new ClassReader(is);
@@ -60,6 +67,7 @@ public final class Program {
     reader.accept(cn, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
     if (cn.name.equals("module-info") || cn.name.endsWith("/package-info")) return;
     classes.put(cn.name, cn);
+    origin.put(cn.name, current);
     // It is read again only for where each method sits in its source, so a report can show the
     // lines of the diff that belong to it.
     reader.accept(new Locations(cn.name), ClassReader.SKIP_FRAMES);

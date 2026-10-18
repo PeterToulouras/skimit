@@ -16,6 +16,8 @@ public final class Main {
         skimit diff --base <classes-dir|jar>... --head <classes-dir|jar>...
                       [--policy FILE] [--json FILE] [--html FILE] [--diff FILE] [--exit-code]
         skimit verify <classes-dir|jar>... --trace FILE [--policy FILE]
+        skimit map <classes-dir|jar>... [--json FILE]
+        skimit feed --base <classes-dir|jar>... --head <classes-dir|jar>... [--json FILE]
 
       Options:
         --policy FILE     your sinks, opaque calls and stores (see docs/usage.md)
@@ -121,6 +123,22 @@ public final class Main {
         if (json != null) Files.writeString(json, Report.json(d));
         if (html != null) Files.writeString(html, Report.html(before, after, d));
         return exitCode && (d.count(Bucket.MUST) > 0 || !d.policy.isEmpty()) ? 1 : 0;
+      }
+      case "map" -> {
+        if (inputs.isEmpty()) throw new IllegalArgumentException("map needs at least one class directory or jar");
+        Behaviour b = new Behaviour(new Analysis(Program.load(inputs), policy, rootRatio, callsOnly));
+        System.out.print(Ledger.map(b));
+        if (json != null) Files.writeString(json, Ledger.json(b));
+        return 0;
+      }
+      case "feed" -> {
+        if (base.isEmpty() || head.isEmpty()) throw new IllegalArgumentException("feed needs --base and --head");
+        Analysis before = new Analysis(Program.load(base), policy, rootRatio, callsOnly);
+        Analysis after = new Analysis(Program.load(head), policy, rootRatio, callsOnly);
+        Feed f = new Feed(new Behaviour(before), new Behaviour(after), new Differ(before, after));
+        System.out.print(Ledger.feed(f));
+        if (json != null) Files.writeString(json, Ledger.json(f));
+        return 0;
       }
       default -> throw new IllegalArgumentException("unknown command " + args[0] + " (try --help)");
     }

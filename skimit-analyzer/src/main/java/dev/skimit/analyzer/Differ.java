@@ -48,6 +48,9 @@ public final class Differ {
   /** Classes moved or renamed by the change, by their name before it. */
   public final List<Move> moves = new ArrayList<>();
 
+  /** Reads the names of moved classes after the change as the names they had before. */
+  final Renames renames;
+
   /** For each change, the lines of the source diff that belong to it; filled by {@link #attach}. */
   public final Map<MethodKey, List<SourceDiff.Line>> lines = new HashMap<>();
 
@@ -76,7 +79,7 @@ public final class Differ {
   public Differ(Analysis base, Analysis head) {
     usingDefaultSinks = head.usingDefaultSinks;
     noSinks = head.sinks.isEmpty();
-    Renames renames = new Renames(renames(base, head));
+    renames = new Renames(renames(base, head));
     BiPredicate<MethodKey, MethodKey> sameBody = (b, h) -> base.hashes.get(b).equals(head.hashes.get(h))
         || !renames.map.isEmpty() && base.hashes.get(b).equals(head.graph.bodyHash(h, renames));
     Map<MethodKey, MethodKey> earlier = counterparts(base, head, renames, sameBody);
