@@ -31,6 +31,8 @@ public final class Feed {
     NEW_WAY_IN,
     /** A way in that could cause something is gone. */
     REMOVED_WAY_IN,
+    /** A route, job or listener answers to a new name and does the same things. */
+    RENAMED_WAY_IN,
     /** A way in can no longer cause something. */
     LOSES,
     /** Same effects, but code on the way to one of them changed. */
@@ -47,12 +49,19 @@ public final class Feed {
     Map<Effect, Set<String>> after = head.causes();
     Set<MethodKey> changed = new HashSet<>();
     for (Differ.Change c : diff.changes) if (!c.kind().equals("removed")) changed.add(c.method());
+    // A handler that only got a new name and path runs the same code: that is not a change on its way.
+    matched.forEach((id, was) -> {
+      MethodKey now = head.entries.get(id).method();
+      if (sameCode(base, base.entries.get(was).method(), head, now)) changed.remove(now);
+    });
 
     // For each changed method, the (way in, effect) pairs whose path it lies on, when the pair
     // itself did not change. One line per group of methods that touch exactly the same pairs.
     Map<MethodKey, Set<String>> onPaths = new TreeMap<>();
     for (Map.Entry<String, Map<Effect, List<MethodKey>>> e : head.effects.entrySet()) {
       String id = e.getKey();
+      // Code nothing calls is not a way in: a service written before its route, or dead code.
+      if (head.entries.get(id).kind().equals("uncalled")) continue;
       String was = matched.get(id);
       Map<Effect, List<MethodKey>> old = was == null ? Map.of() : base.effects.get(was);
       Set<Effect> gained = new TreeSet<>(e.getValue().keySet());
@@ -62,6 +71,9 @@ public final class Feed {
       if (was == null) {
         lines.add(new Line(Kind.NEW_WAY_IN, "New way in: " + id + " " + list(e.getValue().keySet(), before, after)));
         continue;
+      }
+      if (!was.equals(id) && namedOutside(head.entries.get(id))) {
+        lines.add(new Line(Kind.RENAMED_WAY_IN, was + " is now " + id + " (it " + effects(e.getValue().keySet()) + ")"));
       }
       for (Effect x : gained) {
         lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.GAINS,
@@ -81,7 +93,7 @@ public final class Feed {
     }
     Set<String> stillThere = new HashSet<>(matched.values());
     for (Map.Entry<String, Map<Effect, List<MethodKey>>> e : base.effects.entrySet()) {
-      if (stillThere.contains(e.getKey())) continue;
+      if (stillThere.contains(e.getKey()) || base.entries.get(e.getKey()).kind().equals("uncalled")) continue;
       lines.add(new Line(Kind.REMOVED_WAY_IN, "Removed: " + e.getKey() + " (it " + effects(e.getValue().keySet()) + ")"));
     }
     Map<Set<String>, List<MethodKey>> byPairs = new LinkedHashMap<>();
@@ -125,7 +137,60 @@ public final class Feed {
       String was = baseByMethod.get(diff.renames.back(e.method()));
       if (was != null && taken.add(was)) out.put(e.id(), was);
     }
+    // A way in renamed along with its method (/jobinfo/remove to /jobinfo/delete) is still the
+    // same way in when it is the only one of its kind that does exactly the same things.
+    Map<String, List<String>> leftBefore = new HashMap<>();
+    for (Entry e : base.entries.values()) {
+      if (!taken.contains(e.id())) leftBefore.computeIfAbsent(signature(e, base), k -> new ArrayList<>()).add(e.id());
+    }
+    Map<String, List<String>> leftAfter = new HashMap<>();
+    for (Entry e : head.entries.values()) {
+      if (!out.containsKey(e.id())) leftAfter.computeIfAbsent(signature(e, head), k -> new ArrayList<>()).add(e.id());
+    }
+    for (Map.Entry<String, List<String>> e : leftAfter.entrySet()) {
+      List<String> was = new ArrayList<>(leftBefore.getOrDefault(e.getKey(), List.of()));
+      List<String> now = new ArrayList<>(e.getValue());
+      // Several alike: pair those that kept their last word (/user/updatePwd and /auth/updatePwd),
+      // then a last one on each side.
+      for (String n : List.copyOf(now)) {
+        String w = was.stream().filter(b -> lastWord(b).equals(lastWord(n))).findFirst().orElse(null);
+        if (w != null && was.stream().filter(b -> lastWord(b).equals(lastWord(n))).count() == 1) {
+          out.put(n, w);
+          was.remove(w);
+          now.remove(n);
+        }
+      }
+      if (was.size() == 1 && now.size() == 1) out.put(now.get(0), was.get(0));
+    }
     return out;
+  }
+
+  private static String lastWord(String id) {
+    return id.substring(Math.max(id.lastIndexOf('/'), id.lastIndexOf('.')) + 1);
+  }
+
+  /** The same instructions, whatever the method's name and annotations. */
+  private static boolean sameCode(Behaviour a, MethodKey x, Behaviour b, MethodKey y) {
+    return code(a, x).equals(code(b, y));
+  }
+
+  private static String code(Behaviour b, MethodKey m) {
+    org.objectweb.asm.tree.MethodNode mn = b.analysis.graph.methods.get(m);
+    if (mn == null) return "";
+    org.objectweb.asm.util.Textifier t = new org.objectweb.asm.util.Textifier();
+    mn.instructions.accept(new org.objectweb.asm.util.TraceMethodVisitor(t));
+    StringBuilder sb = new StringBuilder(mn.desc);
+    for (Object o : t.getText()) sb.append(o);
+    return sb.toString();
+  }
+
+  private static String signature(Entry e, Behaviour b) {
+    return e.kind() + "|" + b.effects.get(e.id()).keySet();
+  }
+
+  /** Routes, jobs and listeners are named by the outside world; a thread's name is only where its code sits. */
+  private static boolean namedOutside(Entry e) {
+    return Set.of("route", "job", "listener", "schedule", "event").contains(e.kind());
   }
 
   private static String count(Effect x, Map<Effect, Set<String>> before, Map<Effect, Set<String>> after) {

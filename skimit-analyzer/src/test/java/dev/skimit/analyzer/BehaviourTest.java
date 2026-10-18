@@ -110,4 +110,36 @@ class BehaviourTest {
     assertEquals("Writes Order: code on the way changed in OrderService.place (from POST /api/orders)", f.lines.get(0).text());
     assertFalse(f.structural());
   }
+
+  @Test
+  void aRouteThatOnlyChangedItsPathIsOneLine() throws IOException {
+    Analysis base = Compiler.analyze(program(SERVICE, CONTROLLER));
+    Analysis head = Compiler.analyze(program(SERVICE,
+        CONTROLLER.replace("@PostMapping(\"/orders\") public void place(", "@PostMapping(\"/orders/new\") public void create(")));
+    Feed f = new Feed(new Behaviour(base), new Behaviour(head), new Differ(base, head));
+    assertEquals(List.of("POST /api/orders is now POST /api/orders/new (it writes Order)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void alikeRoutesThatMovedArePairedByTheWordTheyKept() throws IOException {
+    String two = CONTROLLER.replace("@PostMapping(\"/orders/count\") public long count() { return 0; }",
+        "@PostMapping(\"/orders/again\") public void again(long id) { service.place(id); }");
+    String moved = two.replace("\"/orders\")", "\"/order/create\")").replace("\"/orders/again\"", "\"/order/again\"");
+    Analysis base = Compiler.analyze(program(SERVICE, two));
+    Analysis head = Compiler.analyze(program(SERVICE, moved));
+    Feed f = new Feed(new Behaviour(base), new Behaviour(head), new Differ(base, head));
+    assertEquals(List.of("POST /api/orders is now POST /api/order/create (it writes Order)",
+        "POST /api/orders/again is now POST /api/order/again (it writes Order)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void codeThatNothingCallsIsNotAWayIn() throws IOException {
+    String unused = "public class Archive { OrderRepository repo; public void purge(long id) { repo.deleteById(id); } }";
+    Analysis base = Compiler.analyze(program(SERVICE, CONTROLLER));
+    Analysis head = Compiler.analyze(program(SERVICE, CONTROLLER, unused));
+    Feed f = new Feed(new Behaviour(base), new Behaviour(head), new Differ(base, head));
+    assertTrue(f.isEmpty(), f.lines.toString());
+  }
 }
