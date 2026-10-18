@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Replays a repository's recent history through `skimit diff`: each commit against its parent.
-# It answers the question that matters for adoption: of the changes this project really made,
-# how many needed a careful read?
+# It answers the question that matters for adoption: of the changes this project really made, how
+# many changed what the program does, how many changed only how it does it, and how many neither?
 #
-#   scripts/replay.sh <git-repo> <policy-file> [commits] [-- build command...]
+#   scripts/replay.sh <git-repo> <policy-file|-> [commits] [-- build command...]
+#
+# With - for the policy, skimit's built-in rule decides what counts as an effect.
 #
 # Each commit is checked out into a scratch worktree and built with the build command. By default
 # that is a quiet compile with tests and style checks off: Maven when the commit has a pom.xml,
@@ -17,11 +19,12 @@
 #   REPLAY_COMMITS  replay exactly these commits (space-separated) instead of the most recent ones
 #   REPLAY_TOOL  maven or gradle, to choose when a project has both builds (default: maven)
 #
-# Output: <work>/replay.jsonl, one line per commit; <work>/diffs/<sha>.json, the full manifest of
-# each commit (scripts/fix-check.py reads these); and a summary on stdout.
+# Output: <work>/replay.jsonl, one line per commit; <work>/diffs/<sha>.json, the full feed of each
+# commit; and a summary on stdout.
 set -uo pipefail
-[ $# -ge 2 ] || { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-repo="$(cd "$1" && pwd)"; policy="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"; shift 2
+[ $# -ge 2 ] || { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+repo="$(cd "$1" && pwd)"; policy=()
+[ "$2" = - ] || policy=(--policy "$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"); shift 2
 count=100
 if [ $# -gt 0 ] && [ "$1" != "--" ]; then count="$1"; shift; fi
 [ "${1:-}" = "--" ] && shift
@@ -83,12 +86,11 @@ for sha in $commits; do
     echo "{\"sha\":\"$sha\",\"date\":\"$date\",\"skipped\":\"did not build\"}" >> "$out"; continue
   fi
   # shellcheck disable=SC2046
-  if java -jar "$jar" diff --base $(dirs_of "$parent") --head $(dirs_of "$sha") --policy "$policy" --json "$work/diffs/$sha.json" > /dev/null 2> "$work/diff.err"; then
+  if java -jar "$jar" diff --base $(dirs_of "$parent") --head $(dirs_of "$sha") ${policy[@]+"${policy[@]}"} --json "$work/diffs/$sha.json" > /dev/null 2> "$work/diff.err"; then
     python3 - "$sha" "$date" "$work/diffs/$sha.json" >> "$out" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[3]))
-print(json.dumps({"sha": sys.argv[1], "date": sys.argv[2], "must": d["mustReview"], "should": d["shouldReview"],
-                  "isolated": d["isolated"], "policy": len(d["policy"]), "shape": len(d["shape"])}))
+print(json.dumps({"sha": sys.argv[1], "date": sys.argv[2], "broken": d["broken"], "what": d["what"], "how": d["how"]}))
 PY
   else
     echo "{\"sha\":\"$sha\",\"date\":\"$date\",\"skipped\":\"analysis failed\"}" >> "$out"
@@ -101,17 +103,13 @@ rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 ok = [r for r in rows if "skipped" not in r]
 if not ok:
     print("replay: no commit could be analysed; see the build.log files under the work directory"); sys.exit(1)
-changed = [r for r in ok if r["must"] + r["should"] + r["isolated"] > 0]
-must = [r for r in changed if r["must"] > 0 or r["policy"] > 0]
-should = [r for r in changed if r not in must and r["should"] > 0]
-iso = [r for r in changed if r not in must and r not in should]
+what = [r for r in ok if r["what"] > 0]
+how = [r for r in ok if r not in what and r["how"] > 0]
+broken = [r for r in ok if r["broken"] > 0]
 n = len(ok)
 pct = lambda k: f"{100 * k / n:.0f}%"
 print(f"{len(rows)} commits, {n} analysed, {len(rows) - n} skipped ({min(r['date'] for r in rows)} to {max(r['date'] for r in rows)})")
-print(f"  no bytecode change      {n - len(changed):4d}  {pct(n - len(changed))}")
-print(f"  only isolated methods   {len(iso):4d}  {pct(len(iso))}")
-print(f"  should review           {len(should):4d}  {pct(len(should))}")
-print(f"  must review             {len(must):4d}  {pct(len(must))}")
-m, s, i = (sum(r[k] for r in changed) for k in ("must", "should", "isolated"))
-print(f"  changed methods: {m + s + i} ({m} must, {s} should, {i} isolated)")
+for label, k in (("no change in behaviour", n - len(what) - len(how)), ("only how it does what it already did", len(how)),
+                 ("a change to what it can do", len(what)), ("broke a rule or needed a person", len(broken))):
+    print(f"  {label:38s}{k:5d}  {pct(k)}")
 PY

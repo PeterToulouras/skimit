@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Runs skimit on a pull request: builds the base and the head, compares them, and writes the
-# review manifest to the job summary. Called by action.yml; it can also be run by hand:
+# Runs skimit on a pull request: builds the base and the head, and writes what the change did to
+# the program's behaviour to the job summary. Called by action.yml; it can also be run by hand:
 #
 #   action/run.sh <base-sha>          (from the root of a checkout of the head)
 #
 # Settings come from the environment, as action.yml passes them:
 #   SKIMIT_VERSION   release to download, or "latest" (default), or a path to a skimit.jar
 #   SKIMIT_BUILD     build command; default: a quiet compile with Maven, or Gradle when there is no pom.xml
-#   SKIMIT_POLICY    policy file, relative to the repository root (optional)
-#   SKIMIT_FAIL      "true" to fail when anything lands in must review
-#   SKIMIT_COMMENT   "true" to post the manifest as a pull request comment (needs GH_TOKEN and PR_NUMBER)
-#   SKIMIT_OUT       directory for the manifest, JSON and HTML report (default: $RUNNER_TEMP/skimit or ./skimit-out)
+#   SKIMIT_POLICY    policy file with sinks and rules, relative to the repository root (optional)
+#   SKIMIT_FAIL      "true" to fail when the change breaks a rule or needs a person under one
+#   SKIMIT_COMMENT   "true" to post the result as a pull request comment (needs GH_TOKEN and PR_NUMBER)
+#   SKIMIT_OUT       directory for the results (default: $RUNNER_TEMP/skimit-out or ./skimit-out)
 set -euo pipefail
 
 base_sha="${1:?usage: action/run.sh <base-sha>}"
@@ -23,7 +23,7 @@ summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 log() { echo "skimit: $*" >&2; }
 
 # The job only reports: anything that stops the comparison is written to the summary and shown as
-# a warning, and the step still succeeds. Only fail-on-must-review fails it.
+# a warning, and the step still succeeds. Only fail-on-broken-rule fails it.
 give_up() {
   log "$1"
   echo "::warning title=skimit::$1"
@@ -42,6 +42,9 @@ else
   log "downloading $url"
   curl -fsSL --retry 3 -o "$jar" "$url" || give_up "Could not download skimit from $url."
 fi
+# Releases before 0.2.0 write a review manifest, which this version of the Action does not read.
+java -jar "$jar" --help 2>/dev/null | grep -q 'skimit map' \
+  || give_up "skimit $version is older than 0.2.0, which this version of the Action needs. Use PeterToulouras/skimit@v0 for older releases."
 
 build() {
   if [ -n "${SKIMIT_BUILD:-}" ]; then bash -c "$SKIMIT_BUILD"
@@ -83,26 +86,25 @@ if [ ${#head_classes[@]} -eq 0 ] || [ ${#base_classes[@]} -eq 0 ]; then
   give_up "No compiled classes were found after the build. Set the build input to a command that compiles the project."
 fi
 
-args=(diff --base "${base_classes[@]}" --head "${head_classes[@]}" --json "$out/manifest.json" --html "$out/report.html")
-# The source diff lets the report show each changed method's own lines; verdicts never depend on it.
-# Releases before 0.1.8 do not know --diff, and a workflow may pin one while using a newer Action.
-if java -jar "$jar" --help 2>/dev/null | grep -q -- '--diff FILE' \
-    && git -C "$head_dir" diff --no-color --no-ext-diff "$base_sha" HEAD -- . > "$out/changes.diff" 2>/dev/null; then
+args=(diff --base "${base_classes[@]}" --head "${head_classes[@]}" --json "$out/skimit.json" --html "$out/skimit.html")
+# The source diff lets the page show a changed method's code on request; results never depend on it.
+if git -C "$head_dir" diff --no-color --no-ext-diff "$base_sha" HEAD -- . > "$out/changes.diff" 2>/dev/null; then
   args+=(--diff "$out/changes.diff")
 fi
 [ -n "${SKIMIT_POLICY:-}" ] && args+=(--policy "$head_dir/$SKIMIT_POLICY")
-java -jar "$jar" "${args[@]}" > "$out/manifest.md" || give_up "The analysis did not finish; the step log shows why."
+java -jar "$jar" "${args[@]}" > "$out/skimit.md" || give_up "The analysis did not finish; the step log shows why."
 
-cat "$out/manifest.md" >> "$summary"
-printf '\nThe interactive report is attached to this run as the `skimit-report` artifact.\n' >> "$summary"
+cat "$out/skimit.md" >> "$summary"
+printf '\nThe page with the code behind each line is attached to this run as an artifact.\n' >> "$summary"
 
-must="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["mustReview"] + (1 if d["policy"] else 0))' "$out/manifest.json")"
-{ echo "must-review=$must"; echo "report=$out/report.html"; } >> "${GITHUB_OUTPUT:-/dev/null}"
+counts="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["broken"], d["what"], d["how"])' "$out/skimit.json")"
+read -r broken what how <<< "$counts"
+{ echo "broken=$broken"; echo "what=$what"; echo "how=$how"; echo "page=$out/skimit.html"; } >> "${GITHUB_OUTPUT:-/dev/null}"
 
 # One comment per pull request, updated on each push rather than repeated.
 post_comment() {
   local body="$out/comment.md" existing
-  { echo '<!-- skimit -->'; head -c 60000 "$out/manifest.md"; } > "$body"
+  { echo '<!-- skimit -->'; head -c 60000 "$out/skimit.md"; } > "$body"
   existing="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
     --jq '.[] | select(.body | startswith("<!-- skimit -->")) | .id' | tail -n 1)" || return 1
   if [ -n "$existing" ]; then
@@ -113,10 +115,10 @@ post_comment() {
 }
 if [ "${SKIMIT_COMMENT:-false}" = true ] && [ -n "${PR_NUMBER:-}" ]; then
   # A pull request from a fork gets a read-only token, so the comment can fail; the summary stands.
-  post_comment || echo "::warning title=skimit::Could not post the pull request comment; the manifest is in the job summary."
+  post_comment || echo "::warning title=skimit::Could not post the pull request comment; the result is in the job summary."
 fi
 
-if [ "${SKIMIT_FAIL:-false}" = true ] && [ "$must" -gt 0 ]; then
-  log "$must method(s) must be reviewed"
+if [ "${SKIMIT_FAIL:-false}" = true ] && [ "$broken" -gt 0 ]; then
+  log "the change breaks $broken rule(s) or needs a person under one"
   exit 1
 fi

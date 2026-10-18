@@ -1,5 +1,5 @@
 name: skimit
-description: Shows which methods in a pull request need a careful review, worked out from the bytecode, with the call chain that proves each verdict.
+description: Says what a pull request did to what your Java service does (routes, jobs and listeners, and the data they write, delete and send) and checks the rules your team set, from the bytecode.
 author: Peter Toulouras
 branding:
   icon: align-left
@@ -11,30 +11,40 @@ inputs:
     required: false
     default: ''
   policy:
-    description: Policy file naming what is critical, relative to the repository root. Without one, every data write counts as critical.
+    description: Policy file with sinks and rules, relative to the repository root. Without one, data writes through repositories, mappers, DAOs and database clients are the effects, with calls out and messages sent.
     required: false
     default: ''
   version:
-    description: skimit release to use, such as 0.1.5, or latest.
+    description: skimit release to use, such as 0.2.0, or latest. This version of the Action needs 0.2.0 or later.
     required: false
     default: latest
-  fail-on-must-review:
-    description: Fail the job when anything lands in must review. Off by default, so the job only reports; a build that fails is reported as a warning, not a failure.
+  fail-on-broken-rule:
+    description: Fail the job when the change breaks a rule in the policy, or needs a person under one. Off by default, so the job only reports; a build that fails is reported as a warning, not a failure.
     required: false
     default: 'false'
   comment:
-    description: Post the manifest as a pull request comment, updated on each push. Needs pull-requests write permission.
+    description: Post the result as a pull request comment, updated on each push. Needs pull-requests write permission.
     required: false
     default: 'false'
   base:
     description: Commit to compare against. Defaults to the base the pull request merges into (the first parent of the merge commit GitHub checks out), or the previous commit on a push.
     required: false
     default: ''
+  artifact:
+    description: Name of the artifact the page is attached as. Defaults to skimit- and the job's name; set one per job when the action runs in a matrix.
+    required: false
+    default: ''
 
 outputs:
-  must-review:
-    description: Number of methods that must be reviewed (plus one if what counts as critical changed).
-    value: ${{ steps.run.outputs.must-review }}
+  broken:
+    description: Number of lines where the change breaks a rule or needs a person under one.
+    value: ${{ steps.run.outputs.broken }}
+  what:
+    description: Number of changes to what the program can do (effects gained or lost, ways in added, removed or renamed).
+    value: ${{ steps.run.outputs.what }}
+  how:
+    description: Number of changes to how it does what it already did.
+    value: ${{ steps.run.outputs.how }}
 
 runs:
   using: composite
@@ -45,7 +55,7 @@ runs:
         SKIMIT_BUILD: ${{ inputs.build }}
         SKIMIT_POLICY: ${{ inputs.policy }}
         SKIMIT_VERSION: ${{ inputs.version }}
-        SKIMIT_FAIL: ${{ inputs.fail-on-must-review }}
+        SKIMIT_FAIL: ${{ inputs.fail-on-broken-rule }}
         SKIMIT_COMMENT: ${{ inputs.comment }}
         BASE_INPUT: ${{ inputs.base }}
         PR_BASE: ${{ github.event.pull_request.base.sha }}
@@ -67,9 +77,10 @@ runs:
           exit 0
         fi
         "$GITHUB_ACTION_PATH/action/run.sh" "$base"
-    - if: always() && steps.run.outputs.report != ''
+    - if: always() && steps.run.outputs.page != ''
       uses: actions/upload-artifact@v7
       with:
-        name: skimit-report
-        path: ${{ steps.run.outputs.report }}
+        name: ${{ inputs.artifact || format('skimit-{0}', github.job) }}
+        overwrite: true
+        path: ${{ steps.run.outputs.page }}
         if-no-files-found: ignore

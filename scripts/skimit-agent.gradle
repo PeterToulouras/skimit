@@ -1,4 +1,4 @@
-// Attaches skimit-agent.jar to every test task, so `skimit verify` can check the verdicts against
+// Attaches skimit-agent.jar to every test task, so `skimit verify` can check the map against
 // what the tests really run. Nothing in the project's own build files changes.
 //
 //   ./gradlew test --init-script scripts/skimit-agent.gradle \
