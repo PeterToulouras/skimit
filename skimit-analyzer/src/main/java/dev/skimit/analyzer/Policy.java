@@ -58,6 +58,8 @@ public final class Policy {
    */
   public boolean defaultSinks = true;
   public final List<Rule> opaque = new ArrayList<>();
+  /** What people decided about behaviour: never, only and review lines. */
+  public final List<Rules.Rule> rules = new ArrayList<>();
   public final List<Participant> participants = new ArrayList<>();
   /** Declared stores: the rule's domain is the store's name. */
   public final List<Rule> storeWrites = new ArrayList<>();
@@ -272,6 +274,12 @@ public final class Policy {
         (t[2].equals("write") ? p.storeWrites : p.storeReads).add(rule(t[1], t[3]));
       } else if (t[0].equals("participant") && t.length == 3 && (t[1].equals("class") || t[1].equals("global"))) {
         p.participants.add(new Participant(glob(t[2]), t[1].equals("global"), t[2]));
+      } else if (t[0].equals("never") || t[0].equals("only") || t[0].equals("review")) {
+        try {
+          p.rules.add(Rules.parse(t[0], line.substring(t[0].length()).strip(), line));
+        } catch (IllegalArgumentException e) {
+          throw new IOException(file + ":" + lineNo + ": " + e.getMessage());
+        }
       } else {
         throw new IOException(file + ":" + lineNo
             + ": expected 'sink DOMAIN owner#method', 'opaque owner#method',"

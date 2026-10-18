@@ -63,6 +63,12 @@ public final class Behaviour {
   final Map<Effect, Set<MethodKey>> leadsTo = new HashMap<>();
   /** For each entry point, every method its calls can run before reaching an effect. */
   final Map<String, Set<MethodKey>> runs = new HashMap<>();
+  /** The calls where each effect happens. */
+  private final Map<Effect, List<Node>> effectNodes = new HashMap<>();
+
+  List<Node> nodesOf(Effect e) {
+    return effectNodes.getOrDefault(e, List.of());
+  }
 
   public Behaviour(Analysis analysis) {
     this.analysis = analysis;
@@ -106,9 +112,8 @@ public final class Behaviour {
       runs.put(id, seen);
     }
     // Backward from each effect: the methods whose code decides how it happens.
-    Map<Effect, List<Node>> byEffect = new HashMap<>();
-    effectAt.forEach((n, e) -> byEffect.computeIfAbsent(e, k -> new ArrayList<>()).add(n));
-    for (Map.Entry<Effect, List<Node>> e : byEffect.entrySet()) {
+    effectAt.forEach((n, e) -> effectNodes.computeIfAbsent(e, k -> new ArrayList<>()).add(n));
+    for (Map.Entry<Effect, List<Node>> e : effectNodes.entrySet()) {
       Set<MethodKey> lead = new HashSet<>();
       Deque<Node> back = new ArrayDeque<>(e.getValue());
       Set<Node> visited = new HashSet<>(e.getValue());

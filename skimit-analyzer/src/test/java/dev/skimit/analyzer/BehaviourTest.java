@@ -176,4 +176,47 @@ class BehaviourTest {
     Behaviour b = behaviour(program(SERVICE, route, get, api, local));
     assertEquals(List.of("writes Order", "calls PaymentsApi (remote)"), effects(b).get("POST /api/orders"));
   }
+
+  static List<Rules.Rule> rules(String... lines) {
+    return java.util.Arrays.stream(lines).map(l -> Rules.parse(l.split(" ")[0], l.substring(l.indexOf(' ') + 1), l)).toList();
+  }
+
+  static Feed feed(String[] base, String[] head, List<Rules.Rule> rules) throws IOException {
+    Analysis a = Compiler.analyze(base);
+    Analysis b = Compiler.analyze(head);
+    return new Feed(new Behaviour(a), new Behaviour(b), new Differ(a, b), rules);
+  }
+
+  @Test
+  void aRouteThatStartsWritingBreaksANeverRule() throws IOException {
+    String writingCount = CONTROLLER.replace("public long count() { return 0; }", "public long count() { service.place(0); return 0; }");
+    Feed f = feed(program(SERVICE, CONTROLLER), program(SERVICE, writingCount), rules("never \"POST /api/orders/count\" writes *"));
+    assertEquals("Breaks \"never \"POST /api/orders/count\" writes *\": POST /api/orders/count writes Order", f.lines.get(0).text());
+    assertEquals(1, f.broken());
+  }
+
+  @Test
+  void writingAroundTheServiceBreaksAnOnlyRule() throws IOException {
+    String direct = CONTROLLER.replace("OrderService service;", "OrderService service; OrderRepository repo;")
+        .replace("service.place(id);", "repo.save(id);");
+    List<Rules.Rule> only = rules("only OrderService writes Order");
+    assertEquals(0, feed(program(SERVICE, CONTROLLER), program(SERVICE, CONTROLLER), only).broken());
+    Feed f = feed(program(SERVICE, CONTROLLER), program(SERVICE, direct), only);
+    assertEquals(List.of("Breaks \"only OrderService writes Order\": POST /api/orders writes Order"),
+        f.lines.stream().filter(l -> l.kind() == Feed.Kind.BROKEN).map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aNewWayToDeleteDataNeedsAPersonUnderAReviewRule() throws IOException {
+    String deleting = SERVICE.replace("repo.save(id);", "repo.save(id); repo.deleteById(id - 1);");
+    Feed f = feed(program(SERVICE, CONTROLLER), program(deleting, CONTROLLER), rules("review deletes *"));
+    assertEquals("Needs a person (\"review deletes *\"): POST /api/orders now deletes Order", f.lines.get(0).text());
+  }
+
+  @Test
+  void aRuleThatWasAlreadyBrokenIsNotHeldAgainstTheChange() throws IOException {
+    String changed = SERVICE.replace("repo.save(id);", "repo.save(id + 1);");
+    Feed f = feed(program(SERVICE, CONTROLLER), program(changed, CONTROLLER), rules("never * writes Order"));
+    assertEquals(0, f.broken(), f.lines.toString());
+  }
 }

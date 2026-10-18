@@ -26,6 +26,8 @@ public final class Feed {
 
   /** How much a line matters to the reader; lower comes first. */
   public enum Kind {
+    /** The change breaks a rule people set, or does something a rule says a person must look at. */
+    BROKEN,
     /** A way in gains or loses the ability to delete data. */
     DELETES,
     /** A way in gains an effect: writing, sending, calling out. */
@@ -49,7 +51,12 @@ public final class Feed {
   public final List<Line> lines = new ArrayList<>();
 
   public Feed(Behaviour base, Behaviour head, Differ diff) {
+    this(base, head, diff, List.of());
+  }
+
+  public Feed(Behaviour base, Behaviour head, Differ diff, List<Rules.Rule> rules) {
     Map<String, String> matched = match(base, head, diff);
+    checkRules(rules, base, head, matched);
     Map<Effect, Set<String>> before = base.causes();
     Map<Effect, Set<String>> after = head.causes();
     Set<MethodKey> changed = new HashSet<>();
@@ -230,6 +237,41 @@ public final class Feed {
   private static String calls(Set<String> names) {
     List<String> l = new ArrayList<>(names);
     return l.size() <= 2 ? String.join(" and ", l) : String.join(", ", l.subList(0, 2)) + " and " + (l.size() - 2) + " more";
+  }
+
+  /**
+   * Never and only rules that the change breaks (true before, false after), then review rules a
+   * gained effect falls under. Breaches that were there before the change are not its doing.
+   */
+  private void checkRules(List<Rules.Rule> rules, Behaviour base, Behaviour head, Map<String, String> matched) {
+    if (rules.isEmpty()) return;
+    Map<String, String> renamed = new HashMap<>();
+    matched.forEach((now, was) -> renamed.put(was, now));
+    Set<String> before = new HashSet<>();
+    for (String k : Rules.breaches(rules, base)) {
+      String[] p = k.split("\u0000", -1);
+      before.add(p[0] + "\u0000" + renamed.getOrDefault(p[1], p[1]) + "\u0000" + p[2] + "\u0000" + p[3]);
+    }
+    for (String k : Rules.breaches(rules, head)) {
+      if (before.contains(k)) continue;
+      String[] p = k.split("\u0000", -1);
+      lines.add(new Line(Kind.BROKEN, "Breaks \"" + p[0] + "\": " + p[1] + " " + p[2] + " " + p[3]));
+    }
+    for (Rules.Rule r : rules) {
+      if (!r.kind().equals("review")) continue;
+      head.effects.forEach((id, es) -> {
+        if (head.entries.get(id).kind().equals("uncalled")) return;
+        Set<Effect> had = matched.containsKey(id) ? base.effects.get(matched.get(id)).keySet() : Set.of();
+        for (Effect e : es.keySet()) {
+          if (!had.contains(e) && r.effect(e)) lines.add(new Line(Kind.BROKEN, "Needs a person (\"" + r.source() + "\"): " + id + " now " + e));
+        }
+      });
+    }
+  }
+
+  /** How many lines break a rule or need a person; a check fails on any. */
+  public long broken() {
+    return lines.stream().filter(l -> l.kind() == Kind.BROKEN).count();
   }
 
   /** Each way in after the change to the one it was before: by name, or by the method it runs when its class moved. */
