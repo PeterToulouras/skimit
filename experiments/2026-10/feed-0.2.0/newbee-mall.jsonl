@@ -34,5 +34,5 @@
 {"sha": "24b5e0a138d526defbdc2477b6753d06d87f3e45", "date": "2019-11-10", "headline": "No change in behaviour.", "broken": 0, "what": 0, "how": 0, "lines": []}
 {"sha": "4a71c3cbb2fee81b920dfdc728b7a29dc9ccacd7", "date": "2019-11-04", "headline": "No change in behaviour.", "broken": 0, "what": 0, "how": 0, "lines": []}
 {"sha": "daf93fb3b789b5cba8b7e099af44863d2af866af", "date": "2019-10-17", "headline": "No change in behaviour.", "broken": 0, "what": 0, "how": 0, "lines": []}
-{"sha": "0d81a1fdbb740f0400479bfdab7cb30ee9d31307", "date": "2019-10-15", "headline": "1 change to what the system can do.", "broken": 0, "what": 1, "how": 0, "lines": [["GAINS", "POST /register now writes MallUser"]]}
+{"sha": "0d81a1fdbb740f0400479bfdab7cb30ee9d31307", "date": "2019-10-15", "headline": "1 change to what the system can do.", "broken": 0, "what": 1, "how": 0, "lines": [["GAINS", "POST /register now writes MallUser (1 → 2 ways in)"]]}
 {"sha": "489c8c4ac4abcae2e47c97d55ede912f43991185", "date": "2019-10-09", "skipped": "did not build"}
