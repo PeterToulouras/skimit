@@ -1,90 +1,104 @@
 package dev.skimit.analyzer;
 
-import dev.skimit.analyzer.Analysis.Verdict;
+import dev.skimit.analyzer.Behaviour.Effect;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * Checks the static verdicts against what a real run did.
- *
- * <p>The agent records every flow that reached a sink. Two things must then hold:
- *
- * <ul>
- *   <li>a method that was on the call stack when a sink was called must be {@code ON_PATH}, unless
- *       the analysis already says it cannot follow a call that method makes;
- *   <li>a method that ran earlier in the same flow must be {@code ON_PATH} or {@code INFLUENCES},
- *       or {@code UNPROVEN}, which makes no claim.
- * </ul>
- *
- * Anything else is a miss: the run shows the method taking part in a critical flow and the
- * analysis said it did not. A clean result is evidence, not proof: it covers only what the run
- * exercised.
+ * Checks the map against what a real run did. The agent records, for every effect the run caused,
+ * which methods were on the call stack at that moment; like the map, it stops at the first effect,
+ * so the EntityManager a repository's save uses is not an effect of its own. Two things must then hold: a way in on the
+ * stack is one the map says can cause that effect, and any other method on the stack is one the
+ * map has a path from. Anything else is a miss: the run did something the map says it cannot. A
+ * clean result covers what the run exercised and no more.
  */
 public final class Verifier {
 
-  public record Miss(MethodKey method, Verdict verdict, String observed, MethodKey flowRoot) {}
+  public record Miss(String who, Effect effect, String why) {}
 
   public final List<Miss> misses = new ArrayList<>();
-  /** Methods seen in critical flows, by verdict. */
-  public final Map<Verdict, Integer> checked = new TreeMap<>();
-  public final Set<MethodKey> ranAfterSinkIsolated = new TreeSet<>();
+  /** What the run did through a call that picks its target by name, which the map does not follow: not a miss, but said. */
+  public final List<Miss> byName = new ArrayList<>();
+  /** Effects the run caused, and the ways in it caused them from. */
+  public final Set<String> effectsSeen = new TreeSet<>();
+  public final Set<String> waysSeen = new TreeSet<>();
   public long hits;
   public long flows;
   public long criticalFlows;
   public int ran;
+  /** Calls the trace names that this version of the code does not have, or that cause no known effect. */
   public int unknown;
 
-  public Verifier(Analysis a, List<Path> traces) throws IOException {
-    Set<MethodKey> seen = new TreeSet<>();
-    Set<String> missed = new TreeSet<>();
-    Set<String> ranKeys = new TreeSet<>();
+  public Verifier(Behaviour b, List<Path> traces) throws IOException {
     List<String> lines = new ArrayList<>();
     for (Path trace : traces) {
       List<String> one = Files.readAllLines(trace);
       if (one.isEmpty() || !one.get(0).startsWith("skimit-trace")) throw new IOException(trace + " is not a skimit trace");
+      if (!one.get(0).equals("skimit-trace 2")) {
+        throw new IOException(trace + " was written by an older skimit-agent; record the run again with this release's agent");
+      }
       lines.addAll(one);
     }
-    for (Verdict v : Verdict.values()) checked.put(v, 0);
+    Set<String> reported = new TreeSet<>();
     for (String line : lines) {
       String[] t = line.split(" ");
       switch (t[0]) {
         case "hits" -> hits += Long.parseLong(t[1]);
         case "flows" -> flows += Long.parseLong(t[1]);
         case "critical-flows" -> criticalFlows += Long.parseLong(t[1]);
-        case "ran" -> { if (ranKeys.add(t[1])) ran++; }
-        case "stack", "before", "after" -> {
+        case "ran" -> ran++;
+        case "reaches" -> {
           MethodKey m = key(t[1]);
-          if (!a.verdicts.containsKey(m)) {
+          Effect e = b.effectFor(key(t[2]));
+          if (e == null || !b.analysis.graph.methods.containsKey(m)) {
             unknown++;
             continue;
           }
-          Verdict v = a.verdict(m);
-          MethodKey root = t.length > 2 ? key(t[2]) : null;
-          if (t[0].equals("after")) {
-            if (v == Verdict.ISOLATED) ranAfterSinkIsolated.add(m);
-            continue;
-          }
-          if (seen.add(m)) checked.merge(v, 1, Integer::sum);
-          // A method that can reach an opaque call is one the analysis already says it cannot
-          // follow; being found on the stack there contradicts nothing.
-          if (t[0].equals("stack") && (v == Verdict.ISOLATED || (v == Verdict.INFLUENCES && !a.reachesOpaque(m)))
-              && missed.add(t[1])) {
-            misses.add(new Miss(m, v, "was on the call stack when a sink was called", root));
-          } else if (t[0].equals("before") && v == Verdict.ISOLATED && missed.add(t[1])) {
-            misses.add(new Miss(m, v, "ran before a sink was called, in the same flow", root));
+          effectsSeen.add(e.toString());
+          List<Behaviour.Entry> ways = b.entries.values().stream().filter(x -> x.method().equals(m)).toList();
+          if (!ways.isEmpty()) {
+            ways.forEach(w -> waysSeen.add(w.id()));
+            if (ways.stream().noneMatch(w -> b.effects.get(w.id()).containsKey(e)) && reported.add(t[1] + e)) {
+              (dispatchesByName(b, m) ? byName : misses).add(new Miss(ways.get(0).id(), e, "the map says this way in cannot cause it"));
+            }
+          } else if (!b.leadsTo.getOrDefault(e, Set.of()).contains(m) && reported.add(t[1] + e)) {
+            (dispatchesByName(b, m) ? byName : misses).add(new Miss(m.pretty(), e, "the map has no path from this method to it"));
           }
         }
         default -> { }
       }
     }
-    misses.sort((x, y) -> x.method().compareTo(y.method()));
+  }
+
+  /** Calls that pick what they run by name at run time: reflection and method handles. */
+  private static final List<Policy.Rule> BY_NAME = List.of(
+      Policy.rule("BY_NAME", "java.lang.reflect.Method#invoke"), Policy.rule("BY_NAME", "java.lang.reflect.Constructor#newInstance"),
+      Policy.rule("BY_NAME", "java.lang.invoke.MethodHandle#invoke*"),
+      Policy.rule("BY_NAME", "org.springframework.util.ReflectionUtils#invokeMethod"),
+      Policy.rule("BY_NAME", "org.springframework.test.util.ReflectionTestUtils#invokeMethod"));
+
+  private final java.util.Map<MethodKey, Boolean> byNameCache = new java.util.HashMap<>();
+
+  /** Whether the method, or anything it calls, calls something by name: from there the map does not follow. */
+  private boolean dispatchesByName(Behaviour b, MethodKey m) {
+    return byNameCache.computeIfAbsent(m, k -> {
+      CallGraph g = b.analysis.graph;
+      java.util.Deque<CallGraph.Node> work = new java.util.ArrayDeque<>(g.nodesOf.getOrDefault(k, List.of()));
+      Set<CallGraph.Node> seen = new java.util.HashSet<>(work);
+      while (!work.isEmpty()) {
+        for (CallGraph.Node n : g.calleesOf(work.poll())) {
+          MethodKey c = n.method();
+          if (BY_NAME.stream().anyMatch(r -> r.matches(c.owner(), c.name()))) return true;
+          if (seen.add(n)) work.add(n);
+        }
+      }
+      return false;
+    });
   }
 
   private static MethodKey key(String s) {
@@ -93,30 +107,28 @@ public final class Verifier {
   }
 
   public String report() {
-    StringBuilder sb = new StringBuilder("# skimit verify\n\n");
-    sb.append("The run called a sink ").append(hits).append(" times, in ").append(criticalFlows).append(" of ")
-        .append(flows).append(" flows. ").append(ran).append(" application methods ran.\n\n");
-    int total = checked.values().stream().mapToInt(Integer::intValue).sum();
-    sb.append(total).append(" methods took part in a flow up to the point it reached a sink:\n\n");
-    for (Map.Entry<Verdict, Integer> e : checked.entrySet()) {
-      sb.append("- ").append(e.getKey()).append(": ").append(e.getValue()).append('\n');
-    }
+    StringBuilder sb = new StringBuilder("## skimit verify\n\n");
+    sb.append("The run caused an effect ").append(hits).append(hits == 1 ? " time" : " times").append(", in ").append(criticalFlows)
+        .append(" of ").append(flows).append(" flows; ").append(ran).append(" application methods ran.\n\n");
+    sb.append(effectsSeen.size()).append(effectsSeen.size() == 1 ? " effect" : " effects").append(" seen, from ")
+        .append(waysSeen.size()).append(waysSeen.size() == 1 ? " way in.\n" : " ways in.\n");
     if (hits == 0) {
-      sb.append("\nNo sink was called, so nothing was checked. Run tests that exercise the critical code.\n");
+      sb.append("\nNothing the map knows as an effect happened, so nothing was checked. Run tests that write, delete or call out.\n");
     } else if (misses.isEmpty()) {
-      sb.append("\n**No misses.** Every one of them was flagged, or the analysis made no claim about it.\n");
+      sb.append("\n**No misses.** Everything the run did is in the map.\n");
     } else {
-      sb.append("\n**").append(misses.size()).append(" misses.** The run shows these taking part in a critical flow:\n\n");
-      for (Miss m : misses) {
-        sb.append("- `").append(m.method().pretty()).append("` is ").append(m.verdict()).append(" but ").append(m.observed());
-        if (m.flowRoot() != null && !m.flowRoot().equals(m.method())) sb.append(" (flow started at `").append(m.flowRoot().pretty()).append("`)");
-        sb.append('\n');
-      }
+      sb.append("\n**").append(misses.size()).append(misses.size() == 1 ? " miss.** " : " misses.** ")
+          .append("The run did these, and the map says it cannot:\n\n");
+      for (Miss m : misses) sb.append("- `").append(m.who()).append("` ").append(m.effect()).append(": ").append(m.why()).append('\n');
     }
-    if (!ranAfterSinkIsolated.isEmpty()) {
-      sb.append("\nFor information: ").append(ranAfterSinkIsolated.size())
-          .append(" isolated methods ran only after the sink had been called, in the same flow. They could not have")
-          .append(" changed what the sink was asked to do, though an exception there could still undo it.\n");
+    if (!byName.isEmpty()) {
+      sb.append("\n").append(byName.size()).append(byName.size() == 1 ? " thing" : " things")
+          .append(" the run did went through reflection, which the map does not follow, so they are not misses:\n\n");
+      for (Miss m : byName) sb.append("- `").append(m.who()).append("` ").append(m.effect()).append('\n');
+    }
+    if (unknown > 0) {
+      sb.append("\n").append(unknown).append(unknown == 1 ? " recorded call does" : " recorded calls do")
+          .append(" not match these classes; record a run of the same build you check.\n");
     }
     return sb.toString();
   }

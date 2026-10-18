@@ -46,13 +46,14 @@ public final class Feed {
     CHANGED_HOW
   }
 
-  public record Line(Kind kind, String text) {}
+  /** A line; {@code methods} are the changed methods it is about, when it is about some, so their code can be shown on request. */
+  public record Line(Kind kind, String text, List<MethodKey> methods) {
+    Line(Kind kind, String text) {
+      this(kind, text, List.of());
+    }
+  }
 
   public final List<Line> lines = new ArrayList<>();
-
-  public Feed(Behaviour base, Behaviour head, Differ diff) {
-    this(base, head, diff, List.of());
-  }
 
   public Feed(Behaviour base, Behaviour head, Differ diff, List<Rules.Rule> rules) {
     Map<String, String> matched = match(base, head, diff);
@@ -70,9 +71,11 @@ public final class Feed {
     // For each changed method, the (way in, effect) pairs whose path it lies on, when the pair
     // itself did not change. One line per group of methods that touch exactly the same pairs.
     Map<MethodKey, Set<String>> onPaths = new TreeMap<>();
-    // Lines about how something already done is done, merged across the ways in they apply to.
-    Map<String, Set<String>> waysByText = new TreeMap<>();
-    Map<String, Boolean> deletesByText = new HashMap<>();
+    // The same for changed methods a way in runs that do not themselves lead to the effect.
+    Map<MethodKey, Set<String>> offPaths = new TreeMap<>();
+    // Lines about how something already done is done: what changed, in which methods, for which
+    // ways in and effects.
+    Map<String, How> hows = new java.util.LinkedHashMap<>();
     for (Map.Entry<String, Map<Effect, List<MethodKey>>> e : head.effects.entrySet()) {
       String id = e.getKey();
       // Code nothing calls is not a way in: a service written before its route, or dead code.
@@ -83,6 +86,13 @@ public final class Feed {
       gained.removeAll(old.keySet());
       Set<Effect> lost = new TreeSet<>(old.keySet());
       lost.removeAll(e.getValue().keySet());
+      if (was == null && base.quiet.contains(id)) {
+        // It was there before and caused nothing; what it causes now is all it gained.
+        for (Effect x : e.getValue().keySet()) {
+          lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.GAINS, id + " now " + x + count(x, before, after)));
+        }
+        continue;
+      }
       if (was == null) {
         lines.add(new Line(Kind.NEW_WAY_IN, "New way in: " + id + " " + list(e.getValue().keySet(), before, after)));
         continue;
@@ -94,8 +104,7 @@ public final class Feed {
       List<Effect> callsGained = gained.stream().filter(x -> x.verb().equals("calls")).toList();
       List<Effect> callsLost = lost.stream().filter(x -> x.verb().equals("calls")).toList();
       if (!callsGained.isEmpty() && !callsLost.isEmpty()) {
-        waysByText.computeIfAbsent("calls out a different way, " + targets(callsGained) + " instead of " + targets(callsLost),
-            k -> new TreeSet<>()).add(id);
+        how(hows, "calls out a different way, " + targets(callsGained) + " instead of " + targets(callsLost), null).ways.add(id);
         gained.removeAll(callsGained);
         lost.removeAll(callsLost);
       }
@@ -111,13 +120,20 @@ public final class Feed {
         if (gained.contains(x)) continue;
         Set<MethodKey> lead = head.leadsTo.getOrDefault(x, Set.of());
         for (MethodKey m : head.runs.get(id)) {
-          if (changed.contains(m) && lead.contains(m)) onPaths.computeIfAbsent(m, k -> new TreeSet<>()).add(x + "\u0000" + id);
+          if (!changed.contains(m)) continue;
+          (lead.contains(m) ? onPaths : offPaths).computeIfAbsent(m, k -> new TreeSet<>()).add(x + "\u0000" + id);
         }
       }
     }
     Set<String> stillThere = new HashSet<>(matched.values());
     for (Map.Entry<String, Map<Effect, List<MethodKey>>> e : base.effects.entrySet()) {
       if (stillThere.contains(e.getKey()) || base.entries.get(e.getKey()).kind().equals("uncalled")) continue;
+      if (head.quiet.contains(e.getKey())) {
+        for (Effect x : e.getValue().keySet()) {
+          lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.LOSES, e.getKey() + " no longer " + x + count(x, before, after)));
+        }
+        continue;
+      }
       lines.add(new Line(Kind.REMOVED_WAY_IN, "Removed: " + e.getKey() + " (it " + effects(e.getValue().keySet()) + ")"));
     }
     // Each changed method on the way to an effect a way in already had: how it changes that effect,
@@ -130,46 +146,178 @@ public final class Feed {
       if (!base.analysis.graph.methods.containsKey(was)) was = sameName(base, diff.renames.back(m));
       MethodNode old = was == null ? null : base.analysis.graph.methods.get(was);
       MethodNode now = head.analysis.graph.methods.get(m);
-      Map<Effect, Set<String>> byEffect = new TreeMap<>();
-      for (String pair : e.getValue()) {
-        String[] p = pair.split("\u0000", 2);
-        Effect x = after.keySet().stream().filter(f -> f.toString().equals(p[0])).findFirst().orElseThrow();
-        byEffect.computeIfAbsent(x, k -> new TreeSet<>()).add(p[1]);
-      }
-      // The same words for several effects reached through the same ways in become one line.
-      Map<List<Object>, List<Effect>> alike = new java.util.LinkedHashMap<>();
-      for (Map.Entry<Effect, Set<String>> fx : byEffect.entrySet()) {
+      for (Map.Entry<Effect, Set<String>> fx : byEffect(e.getValue(), after).entrySet()) {
         Effect x = fx.getKey();
         String template;
         if (old == null) {
-          template = shortName(m) + " is new on the way to: " + EFFECT;
+          template = NEW_ON_THE_WAY + EFFECT;
         } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
-          template = EFFECT + ", through " + shortName(m) + ", which changed and is too long to compare";
+          template = EFFECT + ", through a method that changed and is too long to compare";
         } else {
           PathChange.Change c = PathChange.compare(was.owner(), old, toward(base, x), m.owner(), now, toward(head, x));
           if (!c.any()) continue;
-          template = describe(c, m);
+          template = describe(c);
         }
-        alike.computeIfAbsent(List.of(template, fx.getValue()), k -> new ArrayList<>()).add(x);
-      }
-      for (Map.Entry<List<Object>, List<Effect>> g : alike.entrySet()) {
-        List<Effect> xs = g.getValue();
-        String text = ((String) g.getKey().get(0)).replace(EFFECT, xs.stream().map(Effect::toString).collect(Collectors.joining(" and ")));
-        @SuppressWarnings("unchecked")
-        Set<String> ways = (Set<String>) g.getKey().get(1);
-        waysByText.computeIfAbsent(text, k -> new TreeSet<>()).addAll(ways);
-        deletesByText.put(text, xs.stream().anyMatch(x -> x.verb().equals("deletes")));
+        How h = how(hows, template, m);
+        h.ways.addAll(fx.getValue());
+        h.effects.add(x);
       }
     }
-    // A new method another line already names ("now using JobCompleter.complete") needs no line of its own.
-    waysByText.keySet().removeIf(t -> t.contains(" is new on the way to: ") && waysByText.keySet().stream()
-        .anyMatch(o -> o != t && !o.contains(" is new on the way to: ") && o.contains(t.substring(0, t.indexOf(" is new on the way to: ")))));
-    for (Map.Entry<String, Set<String>> e : waysByText.entrySet()) {
-      Set<String> ways = e.getValue();
-      String who = ways.size() == 1 ? ways.iterator().next() : ways.size() + " ways in (" + first(ways, 2) + ")";
-      lines.add(new Line(deletesByText.getOrDefault(e.getKey(), false) ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + e.getKey()));
+    // Each changed method off the way whose result goes into an effect, or decides whether it
+    // happens, from a method on the way: the price a payment is made with, the permission asked first.
+    Map<String, Map<MethodKey, Set<String>>> roles = new HashMap<>();
+    for (Map.Entry<MethodKey, Set<String>> e : offPaths.entrySet()) {
+      MethodKey m = e.getKey();
+      for (Map.Entry<Effect, Set<String>> fx : byEffect(e.getValue(), after).entrySet()) {
+        Effect x = fx.getKey();
+        Map<MethodKey, Set<String>> from = roles.computeIfAbsent(m + "\u0000" + x, k -> feeds(head, m, x));
+        Map<Set<String>, Set<String>> waysByRole = new HashMap<>();
+        for (String id : fx.getValue()) {
+          Set<String> r = new TreeSet<>();
+          from.forEach((p, rs) -> {
+            if (head.runs.get(id).contains(p)) r.addAll(rs);
+          });
+          if (!r.isEmpty()) waysByRole.computeIfAbsent(r, k -> new TreeSet<>()).add(id);
+        }
+        waysByRole.forEach((r, ways) -> {
+          List<String> parts = new ArrayList<>();
+          if (r.contains("check")) parts.add("changed the check before it " + EFFECT);
+          if (r.contains("data")) parts.add(EFFECT + " with different data");
+          if (parts.isEmpty()) parts.add(EFFECT + ", through a method too long to compare");
+          How h = how(hows, String.join("; ", parts), m);
+          h.ways.addAll(ways);
+          h.effects.add(x);
+        });
+      }
     }
     lines.sort(Comparator.comparing(Line::kind).thenComparing(Line::text));
+    lines.addAll(howLines(hows));
+    // Stable: the lines about how keep their order, broadest first, after the lines about what.
+    lines.sort(Comparator.comparing(Line::kind));
+  }
+
+  /** Pairs of effect and way in, as collected, grouped by effect. */
+  private static Map<Effect, Set<String>> byEffect(Set<String> pairs, Map<Effect, Set<String>> after) {
+    Map<Effect, Set<String>> out = new TreeMap<>();
+    for (String pair : pairs) {
+      String[] p = pair.split("\u0000", 2);
+      Effect x = after.keySet().stream().filter(f -> f.toString().equals(p[0])).findFirst().orElseThrow();
+      out.computeIfAbsent(x, k -> new TreeSet<>()).add(p[1]);
+    }
+    return out;
+  }
+
+  /** A change to how ways in do what they already did: its words, the methods where it happened, for whom and what. */
+  private static final class How {
+    final String template;
+    final List<MethodKey> methods = new ArrayList<>();
+    final Set<String> ways = new TreeSet<>();
+    final Set<Effect> effects = new TreeSet<>();
+
+    How(String template) {
+      this.template = template;
+    }
+  }
+
+  private static final String NEW_ON_THE_WAY = "is new on the way to: ";
+
+  /** The line for these words in this method, one per pair however many ways in and effects it covers. */
+  private static How how(Map<String, How> hows, String template, MethodKey m) {
+    return hows.computeIfAbsent(template + "\u0000" + (m == null ? "" : m.id()), k -> {
+      How h = new How(template);
+      if (m != null) h.methods.add(m);
+      return h;
+    });
+  }
+
+  /**
+   * The lines about how, ready to show: a new method another line already names needs no line of
+   * its own, and methods that changed alike, for the same ways in and effects, are one line, so a
+   * refactoring of thirty helpers behind one write is one thing to know. Lines about deletes come
+   * first, then those that reach the most ways in.
+   */
+  private static List<Line> howLines(Map<String, How> hows) {
+    List<How> all = new ArrayList<>(hows.values());
+    all.removeIf(h -> h.template.startsWith(NEW_ON_THE_WAY) && all.stream().anyMatch(o -> o != h
+        && !o.template.startsWith(NEW_ON_THE_WAY) && o.template.contains(shortName(h.methods.get(0)))));
+    Map<List<Object>, How> merged = new java.util.LinkedHashMap<>();
+    for (How h : all) {
+      How m = merged.computeIfAbsent(List.of(h.template, h.ways, h.effects), k -> {
+        How n = new How(h.template);
+        n.ways.addAll(h.ways);
+        n.effects.addAll(h.effects);
+        return n;
+      });
+      m.methods.addAll(h.methods);
+    }
+    List<How> sorted = new ArrayList<>(merged.values());
+    sorted.sort(Comparator.comparing((How h) -> h.effects.stream().noneMatch(x -> x.verb().equals("deletes")))
+        .thenComparing(h -> -h.ways.size()).thenComparing(h -> h.template));
+    List<Line> out = new ArrayList<>();
+    for (How h : sorted) {
+      String who = h.ways.size() == 1 ? h.ways.iterator().next() : h.ways.size() + " ways in (" + first(h.ways, 2) + ")";
+      String what = h.template.replace(EFFECT, effectList(h.effects));
+      String text = h.template.startsWith(NEW_ON_THE_WAY) ? names(h.methods) + " " + what
+          : h.methods.isEmpty() ? what : what + " (in " + names(h.methods) + ")";
+      boolean deletes = h.effects.stream().anyMatch(x -> x.verb().equals("deletes"));
+      out.add(new Line(deletes ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + text, List.copyOf(h.methods)));
+    }
+    return out;
+  }
+
+  /** "writes Order", "deletes App and writes Audit", "deletes App, writes Audit and 5 more". */
+  private static String effectList(Set<Effect> effects) {
+    List<String> e = effects.stream().map(Effect::toString).toList();
+    return e.size() <= 3 ? String.join(" and ", e) : e.get(0) + ", " + e.get(1) + " and " + (e.size() - 2) + " more";
+  }
+
+  /** "PriceCalculator.total", "A.x and B.y", "A.x, B.y and 3 more". */
+  private static String names(List<MethodKey> ms) {
+    List<String> n = ms.stream().map(Feed::shortName).distinct().sorted().toList();
+    return n.size() <= 2 ? String.join(" and ", n) : n.get(0) + ", " + n.get(1) + " and " + (n.size() - 2) + " more";
+  }
+
+  /**
+   * For a method that does not lead to the effect, the methods on the way to it that call it,
+   * directly or through others, and what the call is to the effect there: "data" when its result
+   * goes into it, "check" when it decides whether it happens.
+   */
+  private static Map<MethodKey, Set<String>> feeds(Behaviour b, MethodKey m, Effect x) {
+    CallGraph g = b.analysis.graph;
+    Set<MethodKey> lead = b.leadsTo.getOrDefault(x, Set.of());
+    Map<MethodKey, PathChange.Slices> sliced = new HashMap<>();
+    Map<MethodKey, Set<String>> out = new HashMap<>();
+    java.util.Deque<CallGraph.Node> work = new java.util.ArrayDeque<>(g.nodesOf.getOrDefault(m, List.of()));
+    Set<CallGraph.Node> seen = new HashSet<>(work);
+    while (!work.isEmpty()) {
+      CallGraph.Node q = work.poll();
+      for (CallGraph.Node p : g.callersOf(q)) {
+        if (!lead.contains(p.method())) {
+          if (seen.add(p)) work.add(p);
+          continue;
+        }
+        MethodNode mn = g.methods.get(p.method());
+        if (mn == null) continue;
+        Set<String> r = out.computeIfAbsent(p.method(), k -> new TreeSet<>());
+        // Too long to slice: whether the call matters to the effect is not known, so it is said.
+        if (mn.instructions.size() > SLICE_LIMIT) {
+          r.add("long");
+          continue;
+        }
+        PathChange.Slices s = sliced.computeIfAbsent(p.method(), k -> PathChange.slices(k.owner(), mn, toward(b, x)));
+        if (s.dataInsns().stream().anyMatch(i -> calls(g, i, q.method()))) r.add("data");
+        if (s.checkInsns().stream().anyMatch(i -> calls(g, i, q.method()))) r.add("check");
+      }
+    }
+    out.values().removeIf(Set::isEmpty);
+    return out;
+  }
+
+  /** Whether an instruction calls the method, or creates the lambda that is it. */
+  private static boolean calls(CallGraph g, AbstractInsnNode insn, MethodKey m) {
+    if (insn instanceof InvokeDynamicInsnNode indy) return m.equals(PathChange.lambdaTarget(indy));
+    if (!(insn instanceof MethodInsnNode mi) || !mi.name.equals(m.name()) || !mi.desc.equals(m.desc())) return false;
+    return mi.owner.equals(m.owner()) || g.subtypesOf(mi.owner).contains(m.owner()) || g.subtypesOf(m.owner()).contains(mi.owner);
   }
 
   /** The one method of the class with this name before the change, when its signature changed (a new return type). */
@@ -210,14 +358,15 @@ public final class Feed {
   /** Stands for the effects a description is about, filled in once the lines for several effects are merged. */
   private static final String EFFECT = "\u0001";
 
-  /** "new check before it writes Pet, on ClinicService.findOwnerById; writes Pet now using …" with where it happens. */
-  private static String describe(PathChange.Change c, MethodKey m) {
+  /** "new check before it writes Pet, on ClinicService.findOwnerById; writes Pet now using …". */
+  private static String describe(PathChange.Change c) {
     String x = EFFECT;
     List<String> parts = new ArrayList<>();
     if (c.reach()) parts.add("now reaches " + x + " here");
     if (c.when()) {
-      parts.add(c.newChecks().isEmpty() ? "changed the check before it " + x
-          : "new check before it " + x + ", on " + calls(c.newChecks()));
+      if (!c.goneChecks().isEmpty()) parts.add("no longer checks " + calls(c.goneChecks()) + " before it " + x);
+      if (!c.newChecks().isEmpty()) parts.add("new check before it " + x + ", on " + calls(c.newChecks()));
+      if (c.newChecks().isEmpty() && c.goneChecks().isEmpty()) parts.add("changed the check before it " + x);
     }
     if (c.what()) {
       if (c.newCalls().isEmpty() && c.goneCalls().isEmpty()) parts.add(x + " with different data");
@@ -227,7 +376,7 @@ public final class Feed {
         parts.add(s);
       }
     }
-    return String.join("; ", parts) + " (in " + shortName(m) + ")";
+    return String.join("; ", parts);
   }
 
   private static String targets(List<Effect> effects) {
@@ -255,7 +404,7 @@ public final class Feed {
     for (String k : Rules.breaches(rules, head)) {
       if (before.contains(k)) continue;
       String[] p = k.split("\u0000", -1);
-      lines.add(new Line(Kind.BROKEN, "Breaks \"" + p[0] + "\": " + p[1] + " " + p[2] + " " + p[3]));
+      lines.add(new Line(Kind.BROKEN, "Breaks a rule (" + p[0] + "): " + p[1] + " " + p[2] + " " + p[3]));
     }
     for (Rules.Rule r : rules) {
       if (!r.kind().equals("review")) continue;
@@ -263,7 +412,7 @@ public final class Feed {
         if (head.entries.get(id).kind().equals("uncalled")) return;
         Set<Effect> had = matched.containsKey(id) ? base.effects.get(matched.get(id)).keySet() : Set.of();
         for (Effect e : es.keySet()) {
-          if (!had.contains(e) && r.effect(e)) lines.add(new Line(Kind.BROKEN, "Needs a person (\"" + r.source() + "\"): " + id + " now " + e));
+          if (!had.contains(e) && r.effect(e)) lines.add(new Line(Kind.BROKEN, "Needs a person (" + r.source() + "): " + id + " now " + e));
         }
       });
     }
@@ -286,8 +435,9 @@ public final class Feed {
         taken.add(id);
       }
     }
+    // A way in that was there and caused nothing is itself, not a renamed one.
     for (Entry e : head.entries.values()) {
-      if (out.containsKey(e.id())) continue;
+      if (out.containsKey(e.id()) || base.quiet.contains(e.id())) continue;
       String was = baseByMethod.get(diff.renames.back(e.method()));
       if (was != null && taken.add(was)) out.put(e.id(), was);
     }
@@ -295,11 +445,15 @@ public final class Feed {
     // same way in when it is the only one of its kind that does exactly the same things.
     Map<String, List<String>> leftBefore = new HashMap<>();
     for (Entry e : base.entries.values()) {
-      if (!taken.contains(e.id())) leftBefore.computeIfAbsent(signature(e, base), k -> new ArrayList<>()).add(e.id());
+      if (!taken.contains(e.id()) && !head.quiet.contains(e.id())) {
+        leftBefore.computeIfAbsent(signature(e, base), k -> new ArrayList<>()).add(e.id());
+      }
     }
     Map<String, List<String>> leftAfter = new HashMap<>();
     for (Entry e : head.entries.values()) {
-      if (!out.containsKey(e.id())) leftAfter.computeIfAbsent(signature(e, head), k -> new ArrayList<>()).add(e.id());
+      if (!out.containsKey(e.id()) && !base.quiet.contains(e.id())) {
+        leftAfter.computeIfAbsent(signature(e, head), k -> new ArrayList<>()).add(e.id());
+      }
     }
     for (Map.Entry<String, List<String>> e : leftAfter.entrySet()) {
       List<String> was = new ArrayList<>(leftBefore.getOrDefault(e.getKey(), List.of()));
@@ -370,15 +524,17 @@ public final class Feed {
 
   private static String shortName(MethodKey m) {
     String p = m.pretty();
-    return p.indexOf('(') < 0 ? p : p.substring(0, p.indexOf('('));
+    p = (p.indexOf('(') < 0 ? p : p.substring(0, p.indexOf('('))).replaceAll("\\$(?=[A-Za-z])", ".");
+    // A constructor reads as what it is: new Order.
+    return p.endsWith(".<init>") ? "new " + p.substring(0, p.length() - ".<init>".length()) : p;
   }
 
   public boolean isEmpty() {
     return lines.isEmpty();
   }
 
-  /** True when what a way in can do changed, not only how it does something it already did. */
-  public boolean structural() {
-    return lines.stream().anyMatch(l -> l.kind().compareTo(Kind.CHANGED_DELETE) < 0);
+  /** Lines about what a way in can do, as opposed to how it does something it already did; broken rules aside. */
+  public long what() {
+    return lines.stream().filter(l -> l.kind() != Kind.BROKEN && l.kind().compareTo(Kind.CHANGED_DELETE) < 0).count();
   }
 }

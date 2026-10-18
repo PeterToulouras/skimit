@@ -9,61 +9,38 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Human-declared facts the analysis cannot derive: which methods are critical sinks (in addition
- * to {@code @Critical} annotations) and which calls are opaque (the analysis cannot see where they
- * go, so anything that can reach one is never declared safe).
+ * What people declare: which calls change the world (sinks, in addition to {@code @Critical}
+ * annotations and the built-in rule for data writes) and the rules a change must keep.
  *
  * <pre>
  * # comments start with a hash
  * sink   MONEY  com.acme.billing.Ledger#post*
  * sink   DATA   java.sql.*Statement#execute*
- * opaque com.acme.plugins.PluginBus#dispatch
- * store  settings write com.acme.settings.SettingsService#set*
- * store  settings read  com.acme.settings.SettingsService#get*
- * participant class  com.acme.web.BeforeEachRequest
- * participant global com.acme.audit.Audited
+ * never  "GET *"      writes *
+ * only   OrderService writes Order
+ * review calls *
  * </pre>
- *
- * A {@code store} line declares state that outlives a request (a table, a bucket, a cache): whoever
- * writes it influences whoever reads it on a critical flow. Repositories, mappers, DAOs and the
- * common database clients are recognised without being declared.
- *
- * <p>A {@code participant} line names an annotation that makes a framework call the method inside
- * flows it is not called from: {@code class} when it runs alongside the other methods of the same
- * object, {@code global} when it can run inside any flow.
  *
  * Patterns are {@code owner#method} globs where {@code *} matches any run of characters. In place of
  * the method glob, {@code @write} matches every method whose name says it writes (see {@link #WRITES}).
+ * Rules are described in {@link Rules}.
  */
 public final class Policy {
-  public record Rule(String domain, Pattern owner, Pattern name, String source) {
+  public record Rule(String domain, Pattern owner, Pattern name) {
     boolean matches(String ownerInternal, String methodName) {
       return owner.matcher(ownerInternal.replace('/', '.')).matches()
           && name.matcher(methodName).matches();
     }
   }
 
-  /** An annotation that makes a framework call the method inside flows it is not called from. */
-  public record Participant(Pattern annotation, boolean global, String source) {
-    boolean matches(String annotationDesc) {
-      // Ljakarta/annotation/PostConstruct; -> jakarta.annotation.PostConstruct
-      return annotation.matcher(annotationDesc.substring(1, annotationDesc.length() - 1).replace('/', '.')).matches();
-    }
-  }
-
   public final List<Rule> sinks = new ArrayList<>();
   /**
-   * Whether to fall back on {@link #DEFAULT_SINKS} when nothing declares a sink: no {@code sink}
-   * line here and no {@code @Critical} in the code.
+   * Whether the built-in rule ({@link #DEFAULT_SINKS}, data writes) adds its sinks to the ones
+   * declared here and with {@code @Critical}.
    */
   public boolean defaultSinks = true;
-  public final List<Rule> opaque = new ArrayList<>();
   /** What people decided about behaviour: never, only and review lines. */
   public final List<Rules.Rule> rules = new ArrayList<>();
-  public final List<Participant> participants = new ArrayList<>();
-  /** Declared stores: the rule's domain is the store's name. */
-  public final List<Rule> storeWrites = new ArrayList<>();
-  public final List<Rule> storeReads = new ArrayList<>();
 
   /** Library types that are a door to a database or cache, whatever sits behind them. */
   static final String[] DATA_CLIENTS = {
@@ -149,86 +126,6 @@ public final class Policy {
     }
   }
 
-  private static final Pattern WRITE_VERB = Pattern.compile(
-      "(save|insert|update|delete|remove|add|put|create|persist|merge|set|store|write|upsert|increment|decrement|clear|evict|flush|drop|truncate).*");
-  private static final Pattern READ_VERB = Pattern.compile(
-      "(find|get|read|query|select|load|list|search|exists|count|fetch|is|has|contains|scan|lookup).*");
-
-  // Building a query reads and writes nothing; running it does (Query#executeUpdate is a write).
-  private static final Pattern NEITHER = Pattern.compile("close|toString|hashCode|equals|getClass|unwrap|isWrapperFor|isClosed|isOpen"
-      + "|create(Native|Named|StoredProcedure|Criteria)?Query|createNamedStoredProcedureQuery|getCriteriaBuilder|createEntityGraph"
-      + "|getMetamodel|getProperties|getFlushMode|setFlushMode|getLockMode"
-      + "|set(Parameter|FirstResult|MaxResults|Hint|LockMode|Timeout|CacheMode|CacheStoreMode|CacheRetrieveMode)");
-
-  /** What a call to a store method does, judged by its name; an unfamiliar name may do either. */
-  static boolean writes(String method) {
-    if (NEITHER.matcher(method).matches()) return false;
-    return WRITE_VERB.matcher(method).matches() || !READ_VERB.matcher(method).matches();
-  }
-
-  static boolean reads(String method) {
-    if (NEITHER.matcher(method).matches()) return false;
-    return READ_VERB.matcher(method).matches() || !WRITE_VERB.matcher(method).matches();
-  }
-
-  /**
-   * Methods the framework runs alongside the other methods of the same object: before each request
-   * a controller handles, or when the object is set up.
-   */
-  private static final String[] DEFAULT_CLASS_PARTICIPANTS = {
-    "org.springframework.web.bind.annotation.ModelAttribute",
-    "org.springframework.web.bind.annotation.InitBinder",
-    "org.springframework.web.bind.annotation.ExceptionHandler",
-    "jakarta.annotation.PostConstruct", "javax.annotation.PostConstruct",
-    "jakarta.annotation.PreDestroy", "javax.annotation.PreDestroy",
-    "jakarta.persistence.Pre*", "jakarta.persistence.Post*",
-    "javax.persistence.Pre*", "javax.persistence.Post*",
-    "org.springframework.beans.factory.annotation.Autowired",
-    "jakarta.inject.Inject", "javax.inject.Inject",
-  };
-
-  /** Methods the framework runs inside flows anywhere in the program. */
-  private static final String[] DEFAULT_GLOBAL_PARTICIPANTS = {
-    "org.aspectj.lang.annotation.Before", "org.aspectj.lang.annotation.After",
-    "org.aspectj.lang.annotation.Around", "org.aspectj.lang.annotation.AfterReturning",
-    "org.aspectj.lang.annotation.AfterThrowing",
-    "org.springframework.context.event.EventListener",
-    "org.springframework.transaction.event.TransactionalEventListener",
-  };
-
-  /** On a class: its participant methods apply to every controller, not only their own. */
-  static final Set<String> ADVICE_CLASS_ANNOTATIONS = Set.of(
-      "Lorg/springframework/web/bind/annotation/ControllerAdvice;",
-      "Lorg/springframework/web/bind/annotation/RestControllerAdvice;");
-
-  /** Reflection and dynamic dispatch the call graph cannot follow. */
-  private static final String[] DEFAULT_OPAQUE = {
-    "java.lang.reflect.Method#invoke",
-    "java.lang.reflect.Constructor#newInstance",
-    "java.lang.reflect.Proxy#newProxyInstance",
-    "java.lang.Class#forName",
-    "java.lang.Class#newInstance",
-    "java.lang.invoke.MethodHandle#invoke*",
-    "java.util.ServiceLoader#load*",
-    "org.springframework.context.ApplicationEventPublisher#publishEvent",
-    "org.springframework.context.*ApplicationContext#publishEvent",
-    "org.springframework.beans.factory.BeanFactory#getBean",
-    "org.springframework.context.*ApplicationContext#getBean",
-    // Dispatch by URL or name: the framework picks the handler at run time.
-    "org.springframework.test.web.servlet.MockMvc#perform",
-    "jakarta.servlet.RequestDispatcher#*", "javax.servlet.RequestDispatcher#*",
-    // Handing on to the rest of a chain: whatever handles the request runs inside this call.
-    "jakarta.servlet.FilterChain#doFilter", "javax.servlet.FilterChain#doFilter",
-    "org.springframework.web.server.WebFilterChain#filter",
-    "org.springframework.http.client.ClientHttpRequestExecution#execute",
-    "org.aspectj.lang.ProceedingJoinPoint#proceed", "org.aopalliance.intercept.Joinpoint#proceed",
-    "org.aopalliance.intercept.MethodInvocation#proceed",
-    // Reflection helpers.
-    "org.springframework.util.ReflectionUtils#invokeMethod",
-    "org.springframework.test.util.ReflectionTestUtils#invoke*",
-    "org.apache.commons.lang3.reflect.MethodUtils#invoke*",
-  };
-
   /**
    * On a class: a framework constructs it and calls it, whether or not application code also
    * constructs one somewhere.
@@ -252,9 +149,6 @@ public final class Policy {
 
   public static Policy defaults() {
     Policy p = new Policy();
-    for (String s : DEFAULT_OPAQUE) p.opaque.add(rule(null, s));
-    for (String s : DEFAULT_CLASS_PARTICIPANTS) p.participants.add(new Participant(glob(s), false, s));
-    for (String s : DEFAULT_GLOBAL_PARTICIPANTS) p.participants.add(new Participant(glob(s), true, s));
     return p;
   }
 
@@ -263,17 +157,13 @@ public final class Policy {
     int lineNo = 0;
     for (String raw : Files.readAllLines(file)) {
       lineNo++;
-      String line = raw.strip();
-      if (line.isEmpty() || line.startsWith("#")) continue;
+      String line = withoutComment(raw).strip();
+      if (line.isEmpty()) continue;
       String[] t = line.split("\\s+");
       if (t[0].equals("sink") && t.length == 3) {
         p.sinks.add(rule(t[1], t[2]));
-      } else if (t[0].equals("opaque") && t.length == 2) {
-        p.opaque.add(rule(null, t[1]));
-      } else if (t[0].equals("store") && t.length == 4 && (t[2].equals("write") || t[2].equals("read"))) {
-        (t[2].equals("write") ? p.storeWrites : p.storeReads).add(rule(t[1], t[3]));
-      } else if (t[0].equals("participant") && t.length == 3 && (t[1].equals("class") || t[1].equals("global"))) {
-        p.participants.add(new Participant(glob(t[2]), t[1].equals("global"), t[2]));
+      } else if (t[0].equals("opaque") || t[0].equals("store") || t[0].equals("participant")) {
+        System.err.println("skimit: " + file + ":" + lineNo + ": '" + t[0] + "' lines are no longer used; this one is ignored");
       } else if (t[0].equals("never") || t[0].equals("only") || t[0].equals("review")) {
         try {
           p.rules.add(Rules.parse(t[0], line.substring(t[0].length()).strip(), line));
@@ -282,19 +172,29 @@ public final class Policy {
         }
       } else {
         throw new IOException(file + ":" + lineNo
-            + ": expected 'sink DOMAIN owner#method', 'opaque owner#method',"
-            + " 'store NAME write|read owner#method' or 'participant class|global annotation'");
+            + ": expected 'sink DOMAIN owner#method', 'never WAY-IN VERB TARGET', 'only CLASS VERB TARGET'"
+            + " or 'review VERB TARGET'");
       }
     }
     return p;
+  }
+
+  /** The line up to a {@code #} that starts a comment: at the start or after a space, outside quotes. */
+  static String withoutComment(String line) {
+    boolean quoted = false;
+    for (int i = 0; i < line.length(); i++) {
+      char c = line.charAt(i);
+      if (c == '"') quoted = !quoted;
+      else if (c == '#' && !quoted && (i == 0 || Character.isWhitespace(line.charAt(i - 1)))) return line.substring(0, i);
+    }
+    return line;
   }
 
   static Rule rule(String domain, String pattern) {
     int hash = pattern.indexOf('#');
     if (hash < 0) throw new IllegalArgumentException("Pattern needs owner#method: " + pattern);
     String method = pattern.substring(hash + 1);
-    return new Rule(domain, glob(pattern.substring(0, hash)),
-        method.equals(WRITES) ? WRITE_NAME : glob(method), pattern);
+    return new Rule(domain, glob(pattern.substring(0, hash)), method.equals(WRITES) ? WRITE_NAME : glob(method));
   }
 
 

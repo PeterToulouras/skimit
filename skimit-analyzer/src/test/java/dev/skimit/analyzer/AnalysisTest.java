@@ -1,15 +1,17 @@
 package dev.skimit.analyzer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.skimit.analyzer.Analysis.Position;
-import dev.skimit.analyzer.Analysis.Verdict;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 
+/** Which calls cause an effect, and which methods can lead to one: what the map is built from. */
 class AnalysisTest {
   static final String LEDGER = """
       import dev.skimit.Critical;
@@ -23,12 +25,21 @@ class AnalysisTest {
         .filter(m -> m.owner().equals(owner) && m.name().equals(name)).findFirst().orElseThrow();
   }
 
-  private static Verdict verdict(Analysis a, String owner, String name) {
-    return a.verdict(find(a, owner, name));
+  /** Whether the method can lead to an effect, so a change to it can change how that effect happens. */
+  private static boolean reaches(Analysis a, String owner, String name) {
+    MethodKey m = find(a, owner, name);
+    return new Behaviour(a).leadsTo.values().stream().anyMatch(s -> s.contains(m));
   }
 
-  private static List<String> witness(Analysis a, String owner, String name) {
-    return a.witness(find(a, owner, name)).stream().map(m -> m.owner() + "." + m.name()).toList();
+  /** For a way in, each effect it causes and the chain of calls that shows it. */
+  private static Map<String, List<String>> causes(Analysis a, String owner, String name) {
+    Behaviour b = new Behaviour(a);
+    MethodKey m = find(a, owner, name);
+    Behaviour.Entry e = b.entries.values().stream().filter(x -> x.method().equals(m)).findFirst().orElseThrow();
+    Map<String, List<String>> out = new TreeMap<>();
+    b.effects.get(e.id()).forEach((effect, chain) ->
+        out.put(effect.toString(), chain.stream().map(k -> k.owner() + "." + k.name()).toList()));
+    return out;
   }
 
   @Test
@@ -38,83 +49,9 @@ class AnalysisTest {
         "public class CardPayments implements Payments { Ledger l; public void charge(long c) { l.post(c); } }",
         "public class Checkout { Payments p; void submit() { p.charge(5); } }",
         "public class Banner { String text() { return \"hi\"; } }");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Checkout", "submit"));
-    assertEquals(List.of("Checkout.submit", "CardPayments.charge", "Ledger.post"), witness(a, "Checkout", "submit"));
-    assertEquals(Set.of("MONEY"), a.domains(find(a, "Checkout", "submit")));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Banner", "text"));
-  }
-
-  @Test
-  void calleeOfAnOnPathMethodInfluencesAndUnrelatedCodeIsIsolated() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "public class Prices { long total() { return Rounding.round(3); } }",
-        "public class Rounding { static long round(long x) { return x; } }",
-        "public class Checkout { Ledger l; Prices p; void submit() { l.post(p.total()); } }",
-        "public class Report { String render() { return pad(\"x\"); } String pad(String s) { return s; } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Prices", "total"));
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Rounding", "round"));
-    assertEquals(List.of("Checkout.submit", "Prices.total", "Rounding.round"), witness(a, "Rounding", "round"));
-    assertEquals("`Checkout.submit()` calls `Prices.total()` calls `Rounding.round(long)`", a.explain(find(a, "Rounding", "round")));
-    assertEquals(Set.of("MONEY"), a.domains(find(a, "Rounding", "round")));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Report", "render"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Report", "pad"));
-  }
-
-  @Test
-  void whateverWritesAFieldTheFlowReadsInfluencesIt() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        """
-        public class Checkout {
-          Ledger l; long fee; String note;
-          Checkout(Ledger l) { this.l = l; }
-          void setFee(long f) { fee = f; }
-          void setNote(String n) { note = n; }
-          String label() { return "x"; }
-          void submit() { l.post(fee); }
-        }""",
-        "public class Report { Report() {} }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Checkout", "<init>"));
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Checkout", "setFee"));
-    assertTrue(a.reason(find(a, "Checkout", "setFee")).startsWith("writes a field read by Checkout.submit()"));
-    // Same class, but they touch nothing the flow reads.
-    assertEquals(Verdict.ISOLATED, verdict(a, "Checkout", "setNote"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Checkout", "label"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Report", "<init>"));
-  }
-
-  @Test
-  void readingACollectionFieldCountsAsWritingIt() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        """
-        import java.util.*;
-        public class Cart {
-          Ledger l; final List<Long> items = new ArrayList<>();
-          void add(long x) { items.add(x); }
-          void pay() { for (long x : items) l.post(x); }
-        }""");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Cart", "add"));
-  }
-
-  @Test
-  void typeHandledOnACriticalPathIsFlaggedEvenIfOnlyAFrameworkFillsIt() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "public class Person { String name; public void setName(String n) { name = n; } }",
-        "public class Owner extends Person { long balance; public void setBalance(long b) { balance = b; } }",
-        "public class Save { Ledger l; void save(Owner o) { l.post(o.balance); } }",
-        "public class Unrelated { int x; public void setX(int v) { x = v; } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Owner", "setBalance"));
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Person", "setName"));
-    assertTrue(a.reason(find(a, "Person", "setName")).startsWith("belongs to a type that Save.save(Owner) handles"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Unrelated", "setX"));
-  }
-
-  @Test
-  void aCollaboratorIsNotDataSoItsOtherMethodsStayClear() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "public class Mailer { void receipt() { } void newsletter() { } }",
-        "public class Checkout { Ledger l; Mailer m; void submit() { l.post(1); m.receipt(); } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Mailer", "receipt"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Mailer", "newsletter"));
+    assertEquals(Map.of("writes MONEY via Ledger", List.of("Checkout.submit", "CardPayments.charge", "Ledger.post")),
+        causes(a, "Checkout", "submit"));
+    assertFalse(reaches(a, "Banner", "text"));
   }
 
   @Test
@@ -131,27 +68,11 @@ class AnalysisTest {
           void describe() { }
         }""");
     // The dispatcher reaches the sink; registering a route does not call it.
-    assertEquals(Verdict.ON_PATH, verdict(a, "Router", "dispatch"));
-    assertEquals(List.of("Router.dispatch", "Api.pay", "Ledger.post"), witness(a, "Router", "dispatch"));
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Api", "wire"));
-    assertTrue(a.reason(find(a, "Api", "wire")).startsWith("creates the reference through which Api.pay()"));
+    assertEquals(List.of("Router.dispatch", "Api.pay", "Ledger.post"), causes(a, "Router", "dispatch").get("writes MONEY via Ledger"));
+    assertFalse(reaches(a, "Api", "wire"));
     // The other route is an alternative at the same call, not part of the payment flow.
-    assertEquals(Verdict.ISOLATED, verdict(a, "Api", "info"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Api", "describe"));
-  }
-
-  @Test
-  void classOnlyAFrameworkConstructsIsNeverDeclaredSafe() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        """
-        public class TrimFilter implements java.util.function.UnaryOperator<String> {
-          public String apply(String s) { return clean(s); }
-          static String clean(String s) { return s.trim(); }
-        }""",
-        "public class Plain { String id(String s) { return s; } }");
-    assertEquals(Verdict.UNPROVEN, verdict(a, "TrimFilter", "clean"));
-    assertTrue(a.reason(find(a, "TrimFilter", "clean")).contains("through UnaryOperator"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Plain", "id"));
+    assertFalse(reaches(a, "Api", "info"));
+    assertFalse(reaches(a, "Api", "describe"));
   }
 
   @Test
@@ -161,13 +82,13 @@ class AnalysisTest {
         "public class PayHandler extends Handler { Ledger l; void configure() { l.post(1); } }",
         "public class SearchHandler extends Handler { void configure() { } }",
         "public class Boot { void pay() { new PayHandler().serve(); } void search() { new SearchHandler().serve(); } }");
-    assertEquals(Verdict.ON_PATH, verdict(a, "PayHandler", "<init>"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "SearchHandler", "<init>"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "SearchHandler", "configure"));
-    // The shared base method is on a path because one of the classes it runs on is.
-    assertEquals(Verdict.ON_PATH, verdict(a, "Handler", "serve"));
-    assertEquals("`Handler.serve() on PayHandler` calls `PayHandler.configure()` calls `Ledger.post(long)`",
-        a.explain(find(a, "Handler", "serve")));
+    assertTrue(reaches(a, "PayHandler", "<init>"));
+    assertFalse(reaches(a, "SearchHandler", "<init>"));
+    assertFalse(reaches(a, "SearchHandler", "configure"));
+    // The shared base method leads to the sink because one of the classes it runs on does.
+    assertTrue(reaches(a, "Handler", "serve"));
+    assertTrue(reaches(a, "Boot", "pay"));
+    assertFalse(reaches(a, "Boot", "search"));
   }
 
   @Test
@@ -180,68 +101,8 @@ class AnalysisTest {
         }""",
         "public class PayRoutes extends Routes { Ledger l; void handle() { l.post(1); } }",
         "public class InfoRoutes extends Routes { void handle() { } Runnable mine() { return route(); } }");
-    assertEquals(Verdict.ISOLATED, verdict(a, "InfoRoutes", "mine"));
-    assertEquals(Verdict.ON_PATH, verdict(a, "Routes", "route"));
-  }
-
-  @Test
-  void writerToAStoreInfluencesACriticalReaderOfIt() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "public interface SettingsRepository { long findFee(); void saveFee(long f); }",
-        "public interface AuditRepository { void saveEntry(String s); }",
-        "public class Checkout { Ledger l; SettingsRepository settings; void submit() { l.post(settings.findFee()); } }",
-        "public class Admin { SettingsRepository settings; AuditRepository audit; void setFee(long f) { settings.saveFee(f); } void note() { audit.saveEntry(\"x\"); } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Admin", "setFee"));
-    assertTrue(a.reason(find(a, "Admin", "setFee")).startsWith("writes to a store that Checkout.submit() reads"));
-    // A different store, which no critical flow reads.
-    assertEquals(Verdict.ISOLATED, verdict(a, "Admin", "note"));
-  }
-
-  @Test
-  void storeCanBeDeclaredInThePolicy() throws IOException {
-    Policy policy = Policy.defaults();
-    policy.storeWrites.add(Policy.rule("flags", "Flags#enable"));
-    policy.storeReads.add(Policy.rule("flags", "Flags#isOn"));
-    Analysis a = Compiler.analyze(policy, LEDGER,
-        "public class Flags { static void enable(String k) { } static boolean isOn(String k) { return false; } }",
-        "public class Billing { Ledger l; void run() { if (Flags.isOn(\"auto\")) l.post(1); } }",
-        "public class Portal { void optIn() { Flags.enable(\"auto\"); } void other() { } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Portal", "optIn"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Portal", "other"));
-  }
-
-  @Test
-  void frameworkParticipantsOfTheSameObjectJoinTheCriticalFlow() throws IOException {
-    Policy policy = Policy.defaults();
-    policy.participants.add(new Policy.Participant(java.util.regex.Pattern.compile("Before"), false, "Before"));
-    Analysis a = Compiler.analyze(policy, LEDGER,
-        "import java.lang.annotation.*; @Retention(RetentionPolicy.RUNTIME) public @interface Before {}",
-        "public class PayController { Ledger l; @Before void load() { } void pay() { l.post(1); } void help() { } }",
-        "public class InfoController { @Before void load() { } void show() { } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "PayController", "load"));
-    assertTrue(a.reason(find(a, "PayController", "load")).contains("@Before"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "PayController", "help"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "InfoController", "load"));
-  }
-
-  @Test
-  void whatAHandledObjectHoldsIsHandledToo() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "public class Address { String city; public void setCity(String c) { city = c; } }",
-        "public class Owner { java.util.List<Address> addresses; long balance; }",
-        "public class Save { Ledger l; void save(Owner o) { l.post(o.balance); } }",
-        "public class Unrelated { public void set() { } }");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "Address", "setCity"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Unrelated", "set"));
-  }
-
-  @Test
-  void reflectionIsNeverDeclaredSafe() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "public class Plugins { Object load(String n) throws Exception { return Class.forName(n); } Object run() throws Exception { return load(\"x\"); } }");
-    assertEquals(Verdict.UNPROVEN, verdict(a, "Plugins", "load"));
-    assertEquals(Verdict.UNPROVEN, verdict(a, "Plugins", "run"));
-    assertTrue(a.reason(find(a, "Plugins", "run")).endsWith("Class.forName"));
+    assertFalse(reaches(a, "InfoRoutes", "mine"));
+    assertTrue(reaches(a, "Routes", "route"));
   }
 
   @Test
@@ -255,13 +116,13 @@ class AnalysisTest {
           void viaReference(List<Long> xs) { xs.forEach(l::post); }
         }""",
         "public class Other { void harmless(java.util.List<Long> xs) { xs.forEach(x -> {}); } }");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Batch", "viaLambda"));
-    assertEquals(Verdict.ON_PATH, verdict(a, "Batch", "viaReference"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Other", "harmless"));
+    assertTrue(reaches(a, "Batch", "viaLambda"));
+    assertTrue(reaches(a, "Batch", "viaReference"));
+    assertFalse(reaches(a, "Other", "harmless"));
   }
 
   @Test
-  void aWrapperThatRunsACallbackItIsHandedIsOnThePath() throws IOException {
+  void aWrapperThatRunsACallbackItIsHandedLeadsToWhatTheCallbackDoes() throws IOException {
     Analysis a = Compiler.analyze(LEDGER,
         """
         import java.util.concurrent.Executor;
@@ -280,12 +141,12 @@ class AnalysisTest {
           void audit(Runnable r) { r.run(); }
           String fromField() { return configured.get(); }
         }""");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "withMetrics"));   // runs the callback
-    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "outer"));         // wraps it in another lambda
-    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "inner"));
-    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "submit"));        // hands it on to a library
-    assertTrue(verdict(a, "Payments", "audit") != Verdict.ON_PATH);         // only ever given a harmless one
-    assertTrue(verdict(a, "Payments", "fromField") != Verdict.ON_PATH);     // not a parameter
+    assertTrue(reaches(a, "Payments", "withMetrics"));   // runs the callback
+    assertTrue(reaches(a, "Payments", "outer"));         // wraps it in another lambda
+    assertTrue(reaches(a, "Payments", "inner"));
+    assertTrue(reaches(a, "Payments", "submit"));        // hands it on to a library
+    assertFalse(reaches(a, "Payments", "audit"));        // only ever given a harmless one
+    assertFalse(reaches(a, "Payments", "fromField"));    // not a parameter
   }
 
   @Test
@@ -314,12 +175,14 @@ class AnalysisTest {
           void parseQuiet(ContentHandler h) { reader.setContentHandler(h); }
           void fromField() { reader.setContentHandler(configured); }
         }""");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Importer", "parse"));      // hands the handler to the parser
-    assertEquals(Verdict.ON_PATH, verdict(a, "Importer", "parseVia"));   // passes it on again
-    assertEquals(List.of("Importer.parse", "RowHandler.startElement", "Ledger.post"), witness(a, "Importer", "parse"));
+    assertTrue(reaches(a, "Importer", "parse"));         // hands the handler to the parser
+    assertTrue(reaches(a, "Importer", "parseVia"));      // passes it on again
+    // The handler's callbacks are charged to the method that creates it as well.
+    assertEquals(List.of("Importer.importRows", "RowHandler.startElement", "Ledger.post"),
+        causes(a, "Importer", "importRows").get("writes MONEY via Ledger"));
     // Only the methods that implement the parameter's type: flush() is no ContentHandler method.
-    assertTrue(verdict(a, "Importer", "parseQuiet") != Verdict.ON_PATH);
-    assertTrue(verdict(a, "Importer", "fromField") != Verdict.ON_PATH);  // a field, not a parameter
+    assertFalse(reaches(a, "Importer", "parseQuiet"));
+    assertFalse(reaches(a, "Importer", "fromField"));    // a field, not a parameter
   }
 
   @Test
@@ -327,8 +190,8 @@ class AnalysisTest {
     Analysis a = Compiler.analyze(LEDGER,
         "public class Job implements Runnable { Ledger l; public void run() { l.post(1); } }",
         "public class Scheduler { void start(java.util.concurrent.Executor e) { e.execute(new Job()); } }");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Scheduler", "start"));
-    assertEquals(List.of("Scheduler.start", "Job.run", "Ledger.post"), witness(a, "Scheduler", "start"));
+    assertTrue(reaches(a, "Scheduler", "start"));
+    assertTrue(reaches(a, "Job", "run"));
   }
 
   @Test
@@ -337,7 +200,7 @@ class AnalysisTest {
         "public class AuditedLedger extends Ledger { @Override public void post(long c) {} }",
         "public class Caller { void go(AuditedLedger l) { l.post(1); } }");
     assertTrue(a.sinks.containsKey(find(a, "AuditedLedger", "post")));
-    assertEquals(Verdict.ON_PATH, verdict(a, "Caller", "go"));
+    assertTrue(reaches(a, "Caller", "go"));
   }
 
   @Test
@@ -354,31 +217,17 @@ class AnalysisTest {
     policy.sinks.add(Policy.rule("DATA", "java.sql.*Statement#execute*"));
     Analysis a = Compiler.analyze(policy,
         """
-        public class Dao {
-          void save(java.sql.PreparedStatement s) throws Exception { s.executeUpdate(); }
+        public class Statements {
+          void apply(java.sql.PreparedStatement s) throws Exception { s.executeUpdate(); }
           void close(java.sql.PreparedStatement s) throws Exception { s.close(); }
         }""",
-        "public class Service { Dao d; void store() throws Exception { d.save(null); } }");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Service", "store"));
-    assertEquals(Set.of("DATA"), a.domains(find(a, "Service", "store")));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Dao", "close"));
+        "public class Service { Statements d; void store() throws Exception { d.apply(null); } }");
+    assertEquals(Set.of("writes DATA via PreparedStatement"), causes(a, "Service", "store").keySet());
+    assertFalse(reaches(a, "Statements", "close"));
   }
 
   @Test
-  void positionComesFromTheDependencyGraph() throws IOException {
-    Analysis a = Compiler.analyze(
-        "public class Money { long cents; }",
-        "public class A { Money m; }", "public class B { Money m; A a; }",
-        "public class C { Money m; }", "public class D { B b; }");
-    assertEquals(Position.ROOT, a.positions.get("Money"));
-    assertEquals(4, a.dependents.get("Money"));
-    assertEquals(Position.TRUNK, a.positions.get("A"));
-    assertEquals(Position.LEAF, a.positions.get("D"));
-    assertEquals(Position.LEAF, a.positions.get("C"));
-  }
-
-  @Test
-  void beanMethodNamedInAnAnnotationExpressionIsCalledByTheAnnotatedMethod() throws IOException {
+  void beanMethodNamedInAnAnnotationExpressionRunsBeforeTheAnnotatedMethod() throws IOException {
     Analysis a = Compiler.analyze(LEDGER,
         "import java.lang.annotation.*; @Retention(RetentionPolicy.RUNTIME) public @interface Guard { String value(); }",
         """
@@ -393,25 +242,12 @@ class AnalysisTest {
           @Guard("@accessRules.canPay(#id)") void pay(long id) { l.post(id); }
           @Guard("@accessRules.canRead(#id)") int size(long id) { return l.size(); }
         }""");
-    assertEquals(Verdict.INFLUENCES, verdict(a, "AccessRules", "canPay"));
-    assertEquals(Verdict.INFLUENCES, verdict(a, "AccessRules", "limit"));
-    assertEquals(List.of("PayController.pay", "AccessRules.canPay"), witness(a, "AccessRules", "canPay"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "AccessRules", "canRead"));
-  }
-
-  @Test
-  void filterThatHandsOnToTheChainCannotBeProvenClear() throws IOException {
-    Analysis a = Compiler.analyze(LEDGER,
-        "package jakarta.servlet; public interface FilterChain { void doFilter(Object request, Object response); }",
-        """
-        public class AuditFilter {
-          void doFilter(Object req, Object res, jakarta.servlet.FilterChain chain) { note(); chain.doFilter(req, res); }
-          void note() {}
-          void describe() {}
-        }""",
-        "public class Checkout { Ledger l; void submit() { l.post(5); } }");
-    assertEquals(Verdict.UNPROVEN, verdict(a, "AuditFilter", "doFilter"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "AuditFilter", "describe"));
+    Behaviour b = new Behaviour(a);
+    Set<MethodKey> runs = b.runs.get(b.entries.values().stream()
+        .filter(e -> e.method().name().equals("pay")).findFirst().orElseThrow().id());
+    assertTrue(runs.contains(find(a, "AccessRules", "canPay")));
+    assertTrue(runs.contains(find(a, "AccessRules", "limit")));
+    assertTrue(b.runs.values().stream().noneMatch(r -> r.contains(find(a, "AccessRules", "canRead"))));
   }
 
   static final String ORDERS = """
@@ -427,23 +263,24 @@ class AnalysisTest {
   void withNothingDeclaredDataWritesAreTheSinks() throws IOException {
     Analysis a = Compiler.analyze(ORDERS, ORDER_SERVICE, "public class Banner { String text() { return \"hi\"; } }");
     assertTrue(a.usingDefaultSinks);
-    assertEquals(Verdict.ON_PATH, verdict(a, "OrderService", "place"));
-    assertEquals(Set.of("DATA_WRITE"), a.domains(find(a, "OrderService", "place")));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Banner", "text"));
+    assertEquals(Set.of("writes Order"), causes(a, "OrderService", "place").keySet());
+    assertFalse(reaches(a, "OrderService", "show"));
+    assertFalse(reaches(a, "Banner", "text"));
   }
 
   @Test
-  void aDeclaredSinkReplacesTheBuiltInRule() throws IOException {
+  void aDeclaredSinkAddsToTheBuiltInRule() throws IOException {
     Analysis annotated = Compiler.analyze(LEDGER, ORDERS, ORDER_SERVICE);
-    assertTrue(!annotated.usingDefaultSinks);
-    assertTrue(annotated.sinks.keySet().stream().noneMatch(m -> m.owner().equals("OrderRepository")));
+    assertFalse(annotated.usingDefaultSinks);  // something was declared, so the output does not say the rule found it all
+    assertEquals(Set.of("MONEY"), annotated.sinks.get(find(annotated, "Ledger", "post")));
+    assertTrue(reaches(annotated, "OrderService", "place"));
 
     Policy policy = Policy.defaults();
     policy.sinks.add(Policy.rule("READS", "OrderRepository#findById"));
     Analysis byPolicy = Compiler.analyze(policy, ORDERS, ORDER_SERVICE);
-    assertTrue(!byPolicy.usingDefaultSinks);
-    assertEquals(Verdict.ON_PATH, verdict(byPolicy, "OrderService", "show"));
-    assertEquals(Set.of("READS"), byPolicy.domains(find(byPolicy, "OrderService", "show")));
+    assertTrue(reaches(byPolicy, "OrderService", "show"));
+    assertTrue(reaches(byPolicy, "OrderService", "place"));
+    assertEquals(Set.of("writes READS via OrderRepository"), causes(byPolicy, "OrderService", "show").keySet());
   }
 
   @Test
@@ -454,7 +291,7 @@ class AnalysisTest {
     }
     for (String name : new String[] {"findById", "findByUpdateTimeAfter", "countByDeleted", "existsByRemovedFalse",
         "getLastUpdate", "isDeleted", "listToDelete", "pageList", "selectForUpdate", "lambda$batchDelete$0"}) {
-      assertTrue(!Policy.rule("D", "JobMapper#@write").matches("JobMapper", name), name);
+      assertFalse(Policy.rule("D", "JobMapper#@write").matches("JobMapper", name), name);
     }
     Analysis a = Compiler.analyze(
         "public interface JobMapper { int scheduleBatchUpdate(Object jobs); Object findByUpdateTime(long t); }",
@@ -465,8 +302,8 @@ class AnalysisTest {
           Object recent(long t) { return jobs.findByUpdateTime(t); }
         }""");
     assertTrue(a.usingDefaultSinks);
-    assertEquals(Verdict.ON_PATH, verdict(a, "Scheduler", "tick"));
-    assertTrue(verdict(a, "Scheduler", "recent") != Verdict.ON_PATH);
+    assertTrue(reaches(a, "Scheduler", "tick"));
+    assertFalse(reaches(a, "Scheduler", "recent"));
   }
 
   @Test
@@ -474,9 +311,9 @@ class AnalysisTest {
     Policy policy = Policy.defaults();
     policy.defaultSinks = false;
     Analysis a = Compiler.analyze(policy, ORDERS, ORDER_SERVICE);
-    assertTrue(!a.usingDefaultSinks);
+    assertFalse(a.usingDefaultSinks);
     assertTrue(a.sinks.isEmpty());
-    assertEquals(Verdict.ISOLATED, verdict(a, "OrderService", "place"));
+    assertFalse(reaches(a, "OrderService", "place"));
   }
 
   @Test
@@ -490,22 +327,12 @@ class AnalysisTest {
           Object show(Object r) { return db.getItem(r); }
         }""");
     assertTrue(a.usingDefaultSinks);
-    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "charge"));
-    assertTrue(verdict(a, "Payments", "show") != Verdict.ON_PATH);
+    assertTrue(reaches(a, "Payments", "charge"));
+    assertFalse(reaches(a, "Payments", "show"));
   }
 
   @Test
-  void withNoSinkAtAllEveryMethodIsIsolated() throws IOException {
-    Policy policy = Policy.defaults();
-    policy.defaultSinks = false;
-    Analysis a = Compiler.analyze(policy,
-        "public class Loader { Object load(String n) throws Exception { return Class.forName(n); } }");
-    assertTrue(a.sinks.isEmpty());
-    assertEquals(Verdict.ISOLATED, verdict(a, "Loader", "load"));
-  }
-
-  @Test
-  void aMethodThatReachesSeveralKindsOfSinkHasAProofForEach() throws IOException {
+  void aWayInThatCausesSeveralEffectsHasAChainForEach() throws IOException {
     Analysis a = Compiler.analyze(LEDGER,
         "import dev.skimit.Critical; public class Signatures { @Critical(\"AUTH\") boolean check(String s) { return true; } }",
         """
@@ -514,12 +341,10 @@ class AnalysisTest {
           void handle(String body) { if (sig.check(body)) settle(5); }
           void settle(long c) { ledger.post(c); }
         }""");
-    java.util.Map<String, List<MethodKey>> proofs = a.proofs(find(a, "Webhook", "handle"));
-    assertEquals(Set.of("AUTH", "MONEY"), proofs.keySet());
-    assertEquals(List.of("Webhook.handle", "Webhook.settle", "Ledger.post"),
-        proofs.get("MONEY").stream().map(m -> m.owner() + "." + m.name()).toList());
-    assertEquals(List.of("Webhook.handle", "Signatures.check"),
-        proofs.get("AUTH").stream().map(m -> m.owner() + "." + m.name()).toList());
+    assertEquals(Map.of(
+        "writes MONEY via Ledger", List.of("Webhook.handle", "Webhook.settle", "Ledger.post"),
+        "writes AUTH via Signatures", List.of("Webhook.handle", "Signatures.check")),
+        causes(a, "Webhook", "handle"));
   }
 
   @Test
@@ -539,9 +364,9 @@ class AnalysisTest {
           void place(Object o) { orders.save(o); }
           Object show(long id) { return mapper.toDto(orders.findById(id)); }
         }""");
-    assertEquals(Verdict.ON_PATH, verdict(a, "OrderService", "place"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "OrderService", "show"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "OrderMapperImpl", "updateFromDto"));
+    assertTrue(reaches(a, "OrderService", "place"));
+    assertFalse(reaches(a, "OrderService", "show"));
+    assertFalse(reaches(a, "OrderMapperImpl", "updateFromDto"));
     assertTrue(a.sinks.keySet().stream().noneMatch(m -> m.owner().contains("Mapper")));
   }
 
@@ -557,9 +382,9 @@ class AnalysisTest {
           void add(Object o) { em.persist(o); }
           int purge() { return em.createQuery("delete from Owner").executeUpdate(); }
         }""");
-    assertEquals(Verdict.ISOLATED, verdict(a, "Owners", "page"));
-    assertEquals(Verdict.ON_PATH, verdict(a, "Owners", "add"));
-    assertEquals(Verdict.ON_PATH, verdict(a, "Owners", "purge"));
+    assertFalse(reaches(a, "Owners", "page"));
+    assertTrue(reaches(a, "Owners", "add"));
+    assertTrue(reaches(a, "Owners", "purge"));
   }
 
   @Test
@@ -576,8 +401,8 @@ class AnalysisTest {
           Ledger l;
           void pay(Object note) { l.post(note.toString().length()); }
         }""");
-    assertEquals(Verdict.ON_PATH, verdict(a, "Payments", "pay"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Dto", "toString"));
-    assertEquals(Verdict.ISOLATED, verdict(a, "Dto", "setTags"));
+    assertTrue(reaches(a, "Payments", "pay"));
+    assertFalse(reaches(a, "Dto", "toString"));
+    assertFalse(reaches(a, "Dto", "setTags"));
   }
 }

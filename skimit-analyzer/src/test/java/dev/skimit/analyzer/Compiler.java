@@ -20,7 +20,7 @@ final class Compiler {
   }
 
   static Analysis analyze(Policy policy, String... sources) throws IOException {
-    return new Analysis(Program.load(List.of(compile(sources))), policy, 0.10);
+    return new Analysis(Program.load(List.of(compile(sources))), policy);
   }
 
   static Path compile(String... sources) throws IOException {

@@ -8,7 +8,7 @@
   </parent>
   <artifactId>skimit-agent</artifactId>
   <name>skimit-agent</name>
-  <description>Records what really runs in flows that reach a sink, so the static verdicts can be checked.</description>
+  <description>Records the effects a real run causes and what was on the stack, so skimit's map can be checked.</description>
   <properties>
     <!-- The agent runs inside the program under test, so it targets an older Java than the analyzer. -->
     <maven.compiler.release>11</maven.compiler.release>
@@ -18,6 +18,12 @@
       <groupId>org.ow2.asm</groupId>
       <artifactId>asm-tree</artifactId>
       <version>${asm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
     </dependency>
   </dependencies>
   <build>

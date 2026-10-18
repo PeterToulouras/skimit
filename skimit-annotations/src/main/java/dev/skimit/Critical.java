@@ -7,13 +7,14 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a critical sink: code whose behaviour a human must always review.
+ * Marks an effect: a call that changes something outside the program, which skimit then maps
+ * from every way in that can cause it ({@code writes MONEY via Ledger}).
  *
  * <p>Put it on the few places where the important thing actually happens (the ledger write, the
- * permission check, the personal-data store). Everything that can reach a sink is derived by the
- * analyzer; nothing else needs tagging.
+ * personal-data store) when skimit's built-in rule does not already find them. Everything that can
+ * reach them is derived by the analyzer; nothing else needs tagging.
  *
- * <p>On a type, every method of the type is a sink. Overrides of a sink method are sinks too.
+ * <p>On a type, every method of the type is an effect. Overrides of such a method are too.
  */
 @Documented
 @Retention(RetentionPolicy.CLASS)

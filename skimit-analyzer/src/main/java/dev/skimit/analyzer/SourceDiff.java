@@ -7,8 +7,8 @@ import java.util.regex.Pattern;
 
 /**
  * A unified diff of the sources (what {@code git diff} prints), read so that each changed method
- * can be shown with its own lines. The analysis never reads it: verdicts come from the bytecode
- * alone, and this only puts the code a reviewer has to read next to the reason to read it.
+ * can be shown with its own lines. The analysis never reads it: what skimit says comes from the
+ * bytecode alone, and this only puts the code behind a line next to it, for whoever asks.
  */
 public final class SourceDiff {
 

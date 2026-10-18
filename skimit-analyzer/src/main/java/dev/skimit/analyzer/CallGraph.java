@@ -56,20 +56,7 @@ public final class CallGraph {
    * A method as it runs on one concrete receiver class. The receiver is null for static methods,
    * for library and abstract methods, and for classes with no concrete form in the program.
    */
-  public record Node(MethodKey method, String receiver) implements Comparable<Node> {
-    @Override
-    public int compareTo(Node o) {
-      int c = method.compareTo(o.method);
-      if (c != 0) return c;
-      return (receiver == null ? "" : receiver).compareTo(o.receiver == null ? "" : o.receiver);
-    }
-
-    /** Short human form; names the receiver when the method is inherited. */
-    public String pretty() {
-      if (receiver == null || receiver.equals(method.owner())) return method.pretty();
-      return method.pretty() + " on " + receiver.substring(receiver.lastIndexOf('/') + 1);
-    }
-  }
+  public record Node(MethodKey method, String receiver) {}
 
   public final Program program;
   /** Application methods as declared, including abstract ones. */
@@ -78,39 +65,16 @@ public final class CallGraph {
   public final Map<MethodKey, List<Node>> nodesOf = new TreeMap<>();
   public final Map<Node, Set<Node>> callees = new HashMap<>();
   public final Map<Node, Set<Node>> callers = new HashMap<>();
-  /** Opaque calls made directly by each node. */
-  public final Map<Node, Set<String>> opaqueCalls = new TreeMap<>();
   /** Every method that appears as a call target, application or library. */
   public final Set<MethodKey> targets = new HashSet<>();
   /** Top-level class to the top-level application classes it references. */
   public final Map<String, Set<String>> classDeps = new TreeMap<>();
-  /**
-   * Application classes whose instances each method handles as data: types in its own signature,
-   * in the signatures of what it calls, in field accesses, casts and allocations. A class it
-   * only calls methods on is a collaborator, not data, and is left out.
-   */
-  public final Map<MethodKey, Set<String>> dataTypes = new HashMap<>();
   /** Per node, one set of possible targets for each call instruction. */
   public final Map<Node, List<Set<Node>>> sites = new HashMap<>();
-  /** Lambda or method-reference target to the nodes that create it, for application interfaces. */
-  public final Map<Node, Set<Node>> creators = new HashMap<>();
-  /** Methods a framework calls alongside the other methods of the same object, to the annotation. */
-  public final Map<MethodKey, String> classParticipants = new TreeMap<>();
-  /** Methods a framework may call inside any flow, to the annotation. */
-  public final Map<MethodKey, String> globalParticipants = new TreeMap<>();
-  /** Fields each node reads, as {@code owner#name@receiver} with {@code *} for an unknown receiver. */
-  public final Map<Node, Set<String>> fieldReads = new HashMap<>();
-  /** Application classes that application code constructs somewhere. */
-  public final Set<String> instantiated = new HashSet<>();
 
   private final Map<String, Set<String>> subtypes = new HashMap<>();
   private final Map<String, List<String>> receiverCache = new HashMap<>();
   private final Map<String, Shape> shapes = new HashMap<>();
-  private final Policy policy;
-  private Set<String> currentRefs;
-  private final Map<String, List<Node>> writersExact = new HashMap<>();
-  private final Map<String, List<Node>> writersUnknown = new HashMap<>();
-  private final Map<String, List<Node>> writersAll = new HashMap<>();
   private final Map<String, List<Lambda>> lambdas = new HashMap<>();
   private final List<Pending> pending = new ArrayList<>();
 
@@ -118,16 +82,14 @@ public final class CallGraph {
 
   private record Pending(Node from, Set<Node> site, String type, String method) {}
 
-  public CallGraph(Program program, Policy policy) {
+  public CallGraph(Program program) {
     this.program = program;
-    this.policy = policy;
     indexHierarchy();
     for (ClassNode cn : program.classes.values()) {
       for (MethodNode mn : cn.methods) {
         MethodKey key = new MethodKey(cn.name, mn.name, mn.desc);
         methods.put(key, mn);
         if (!hasBody(key)) continue;
-        participant(cn, mn, key);
         List<Node> nodes = new ArrayList<>();
         if ((mn.access & Opcodes.ACC_STATIC) == 0) {
           for (String r : receivers(cn.name)) nodes.add(new Node(key, r));
@@ -404,35 +366,6 @@ public final class CallGraph {
     return sites.getOrDefault(n, List.of());
   }
 
-  /** Nodes that may have written a field this read sees. */
-  public List<Node> writersOf(String read) {
-    int at = read.lastIndexOf('@');
-    String field = read.substring(0, at);
-    if (read.endsWith("@*")) return writersAll.getOrDefault(field, List.of());
-    List<Node> out = new ArrayList<>(writersExact.getOrDefault(read, List.of()));
-    out.addAll(writersUnknown.getOrDefault(field, List.of()));
-    return out;
-  }
-
-  private void participant(ClassNode cn, MethodNode mn, MethodKey key) {
-    List<org.objectweb.asm.tree.AnnotationNode> all = new ArrayList<>();
-    if (mn.visibleAnnotations != null) all.addAll(mn.visibleAnnotations);
-    if (mn.invisibleAnnotations != null) all.addAll(mn.invisibleAnnotations);
-    boolean advice = false;
-    if (cn.visibleAnnotations != null) {
-      for (org.objectweb.asm.tree.AnnotationNode an : cn.visibleAnnotations) advice |= Policy.ADVICE_CLASS_ANNOTATIONS.contains(an.desc);
-    }
-    for (org.objectweb.asm.tree.AnnotationNode an : all) {
-      for (Policy.Participant p : policy.participants) {
-        if (!p.matches(an.desc)) continue;
-        String type = an.desc.substring(1, an.desc.length() - 1);
-        String name = "@" + type.substring(type.lastIndexOf('/') + 1);
-        if (p.global() || advice) globalParticipants.putIfAbsent(key, name);
-        else classParticipants.putIfAbsent(key, name);
-      }
-    }
-  }
-
   private static final Set<String> CONVERTER_ANNOTATIONS = Set.of("Lorg/mapstruct/Mapper;", "Lorg/mapstruct/MapperConfig;");
   private final Map<String, Boolean> converterCache = new HashMap<>();
 
@@ -456,32 +389,6 @@ public final class CallGraph {
     return found;
   }
 
-  /** True when a framework constructs this class itself (a stereotype annotation says so). */
-  public boolean managed(String cls) {
-    ClassNode cn = program.classes.get(cls);
-    if (cn == null) return false;
-    for (List<org.objectweb.asm.tree.AnnotationNode> list : List.of(
-        cn.visibleAnnotations == null ? List.<org.objectweb.asm.tree.AnnotationNode>of() : cn.visibleAnnotations,
-        cn.invisibleAnnotations == null ? List.<org.objectweb.asm.tree.AnnotationNode>of() : cn.invisibleAnnotations)) {
-      for (org.objectweb.asm.tree.AnnotationNode an : list) if (Policy.MANAGED_CLASS_ANNOTATIONS.contains(an.desc)) return true;
-    }
-    return false;
-  }
-
-  /** Application classes an object of this class holds in its fields, generic arguments included. */
-  public Set<String> fieldTypes(String cls) {
-    Set<String> out = new TreeSet<>();
-    ClassNode cn = program.classes.get(cls);
-    if (cn == null) return out;
-    java.util.regex.Pattern name = java.util.regex.Pattern.compile("L([^;<]+)[;<]");
-    for (FieldNode fn : cn.fields) {
-      if ((fn.access & Opcodes.ACC_STATIC) != 0) continue;
-      java.util.regex.Matcher m = name.matcher(fn.signature != null ? fn.signature : fn.desc);
-      while (m.find()) if (program.classes.containsKey(m.group(1))) out.add(m.group(1));
-    }
-    return out;
-  }
-
   public Set<Node> calleesOf(Node n) {
     return callees.getOrDefault(n, Collections.emptySet());
   }
@@ -491,14 +398,6 @@ public final class CallGraph {
   }
 
   /** Callees of a declared method across all its receivers. */
-  public Set<MethodKey> calleesOf(MethodKey m) {
-    Set<MethodKey> out = new TreeSet<>();
-    for (Node n : nodesOf.getOrDefault(m, List.of())) {
-      for (Node c : calleesOf(n)) out.add(c.method());
-    }
-    return out;
-  }
-
   public boolean hasBody(MethodKey m) {
     MethodNode mn = methods.get(m);
     return mn != null && (mn.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) == 0;
@@ -636,19 +535,13 @@ public final class CallGraph {
     for (FieldNode fn : cn.fields) depType(deps, self, Type.getType(fn.desc));
     for (MethodNode mn : cn.methods) {
       MethodKey key = new MethodKey(cn.name, mn.name, mn.desc);
-      Set<String> data = dataTypes.computeIfAbsent(key, k -> new TreeSet<>());
-      currentRefs = data;
       depType(deps, self, Type.getMethodType(mn.desc));
       for (AbstractInsnNode insn : mn.instructions) {
         if (insn instanceof MethodInsnNode mi) {
-          currentRefs = null;
           dep(deps, self, mi.owner);
-          currentRefs = data;
           depType(deps, self, Type.getMethodType(mi.desc));
         } else if (insn instanceof InvokeDynamicInsnNode indy) {
-          currentRefs = null;
           for (Object arg : indy.bsmArgs) if (arg instanceof Handle h) dep(deps, self, h.getOwner());
-          currentRefs = data;
         } else if (insn instanceof FieldInsnNode fi) {
           dep(deps, self, fi.owner);
         } else if (insn instanceof TypeInsnNode ti) {
@@ -659,8 +552,6 @@ public final class CallGraph {
           depType(deps, self, t);
         }
       }
-      data.remove(cn.name);
-      currentRefs = null;
 
       List<Node> nodes = nodesOf.get(key);
       if (nodes == null) continue;
@@ -675,8 +566,6 @@ public final class CallGraph {
             call(from, kind, onThis.contains(insn), mi.owner, mi.name, mi.desc);
           } else if (insn instanceof InvokeDynamicInsnNode indy) {
             lambda(from, indy, onThis.contains(insn));
-          } else if (insn instanceof FieldInsnNode fi) {
-            field(from, fi, onThis.contains(insn));
           }
         }
       }
@@ -771,13 +660,6 @@ public final class CallGraph {
 
   private void call(Node from, int kind, boolean onThis, String owner, String name, String desc) {
     if (owner.startsWith("[")) owner = "java/lang/Object";
-    for (Policy.Rule r : policy.opaque) {
-      if (r.matches(owner, name)) {
-        opaqueCalls.computeIfAbsent(from, k -> new TreeSet<>())
-            .add(owner.substring(owner.lastIndexOf('/') + 1) + "." + name);
-      }
-    }
-    store(from, owner, name);
     Set<Node> site = newSite(from);
     for (Node target : targets(from, kind, onThis, owner, name, desc)) edge(from, target, site);
     if (kind == VIRTUAL && !(onThis && from.receiver() != null)) pending.add(new Pending(from, site, owner, name));
@@ -788,7 +670,6 @@ public final class CallGraph {
 
   /** new X(...): X now exists, and a library it extends may call its overridable methods. */
   private void constructed(Node from, String owner) {
-    if (!from.method().owner().equals(owner)) instantiated.add(owner);
     for (MethodKey cb : shape(owner).callbacks()) {
       Set<Node> site = newSite(from);
       for (Node target : nodesFor(cb, owner)) edge(from, target, site);
@@ -808,7 +689,6 @@ public final class CallGraph {
       List<Node> targets = targets(from, kind, firstCaptureIsThis && !isNew, h.getOwner(), h.getName(), h.getDesc());
       if (appInterface) {
         lambdas.computeIfAbsent(iface, k -> new ArrayList<>()).add(new Lambda(indy.name, targets));
-        for (Node t : targets) creators.computeIfAbsent(t, k -> new LinkedHashSet<>()).add(from);
       }
       // A library interface, or one that extends a library interface: the library may call it,
       // so the creating method is charged with the target.
@@ -817,29 +697,6 @@ public final class CallGraph {
         for (Node target : targets) edge(from, target, site);
         if (isNew && program.classes.containsKey(h.getOwner())) constructed(from, h.getOwner());
       }
-    }
-  }
-
-  private void field(Node from, FieldInsnNode fi, boolean onThis) {
-    String declaring = fi.owner;
-    FieldNode decl = null;
-    while (decl == null && declaring != null && program.classes.containsKey(declaring)) {
-      ClassNode c = program.classes.get(declaring);
-      for (FieldNode fn : c.fields) if (fn.name.equals(fi.name)) decl = fn;
-      if (decl == null) declaring = c.superName;
-    }
-    if (decl == null) return;
-    String field = declaring + "#" + fi.name;
-    boolean isStatic = fi.getOpcode() == Opcodes.GETSTATIC || fi.getOpcode() == Opcodes.PUTSTATIC;
-    String receiver = !isStatic && onThis && from.receiver() != null ? from.receiver() : "*";
-    boolean write = fi.getOpcode() == Opcodes.PUTFIELD || fi.getOpcode() == Opcodes.PUTSTATIC;
-    if (!write) fieldReads.computeIfAbsent(from, k -> new TreeSet<>()).add(field + "@" + receiver);
-    // Reading a collection is enough to change it, so such a read counts as a write as well;
-    // except in toString, hashCode and equals, which by contract only look.
-    if (write || (mutableContainer(decl.desc) && !objectMethod(from.method()))) {
-      writersAll.computeIfAbsent(field, k -> new ArrayList<>()).add(from);
-      if (receiver.equals("*")) writersUnknown.computeIfAbsent(field, k -> new ArrayList<>()).add(from);
-      else writersExact.computeIfAbsent(field + "@" + receiver, k -> new ArrayList<>()).add(from);
     }
   }
 
@@ -881,37 +738,11 @@ public final class CallGraph {
     return found;
   }
 
-  /** Records a call that reads or writes a store, so that writers reach the readers they affect. */
-  private void store(Node from, String owner, String name) {
-    if (name.startsWith("<")) return;
-    Set<String> written = new TreeSet<>();
-    Set<String> read = new TreeSet<>();
-    for (Policy.Rule r : policy.storeWrites) if (r.matches(owner, name)) written.add(r.domain());
-    for (Policy.Rule r : policy.storeReads) if (r.matches(owner, name)) read.add(r.domain());
-    if (written.isEmpty() && read.isEmpty()) {
-      String auto = storeOf(owner);
-      if (auto != null && !from.method().owner().equals(owner)) {
-        String label = auto.substring(auto.lastIndexOf('/') + 1);
-        if (Policy.writes(name)) written.add(label);
-        if (Policy.reads(name)) read.add(label);
-      }
-    }
-    for (String s : written) {
-      writersAll.computeIfAbsent("store:" + s, k -> new ArrayList<>()).add(from);
-    }
-    for (String s : read) fieldReads.computeIfAbsent(from, k -> new TreeSet<>()).add("store:" + s + "@*");
-  }
-
   /** toString(), hashCode() or equals(Object): methods whose contract is to look, not change. */
   static boolean objectMethod(MethodKey m) {
     return (m.name().equals("toString") && m.desc().equals("()Ljava/lang/String;"))
         || (m.name().equals("hashCode") && m.desc().equals("()I"))
         || (m.name().equals("equals") && m.desc().equals("(Ljava/lang/Object;)Z"));
-  }
-
-  private static boolean mutableContainer(String desc) {
-    return desc.startsWith("[") || desc.startsWith("Ljava/util/") || desc.equals("Ljava/lang/StringBuilder;")
-        || desc.equals("Ljava/lang/StringBuffer;");
   }
 
   private Set<Node> newSite(Node from) {
@@ -970,7 +801,6 @@ public final class CallGraph {
       return;
     }
     if (!program.classes.containsKey(internalName)) return;
-    if (currentRefs != null) currentRefs.add(internalName);
     String top = topLevel(internalName);
     if (!top.equals(self)) deps.add(top);
   }
@@ -1060,13 +890,12 @@ public final class CallGraph {
       "java/io/Serializable", "java/lang/Cloneable");
 
   /**
-   * What a class inherits.
+   * What a class inherits from libraries.
    *
-   * @param superclasses application superclasses, nearest first
    * @param libraryParent a library type it extends or implements, or null
    * @param callbacks methods a library could call on an instance, if there is a library parent
    */
-  public record Shape(List<String> superclasses, String libraryParent, List<MethodKey> callbacks) {}
+  public record Shape(String libraryParent, List<MethodKey> callbacks) {}
 
   public Shape shape(String owner) {
     Shape cached = shapes.get(owner);
@@ -1098,13 +927,7 @@ public final class CallGraph {
         }
       }
     }
-    List<String> supers = new ArrayList<>();
-    ClassNode cn = program.classes.get(owner);
-    while (cn != null && cn.superName != null && program.classes.containsKey(cn.superName)) {
-      supers.add(cn.superName);
-      cn = program.classes.get(cn.superName);
-    }
-    Shape shape = new Shape(supers, libraryParent, callbacks);
+    Shape shape = new Shape(libraryParent, callbacks);
     shapes.put(owner, shape);
     return shape;
   }

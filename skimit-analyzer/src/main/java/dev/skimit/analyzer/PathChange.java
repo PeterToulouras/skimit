@@ -44,10 +44,14 @@ import org.objectweb.asm.util.TraceMethodVisitor;
 final class PathChange {
 
   /** The two slices of one version of a method, as comparable text and as the calls they make. */
-  record Slices(String data, String checks, Set<String> dataCalls, Set<String> checkCalls, boolean reaches) {}
+  record Slices(String data, String checks, Set<String> dataCalls, Set<String> checkCalls, boolean reaches,
+      Set<AbstractInsnNode> dataInsns, Set<AbstractInsnNode> checkInsns) {
+    static final Slices NONE = new Slices("", "", Set.of(), Set.of(), false, Set.of(), Set.of());
+  }
 
   /** What changed for the effect: in the data going into it, in the checks before it, or in whether this method reaches it at all. */
-  record Change(boolean what, boolean when, boolean reach, Set<String> newCalls, Set<String> goneCalls, Set<String> newChecks) {
+  record Change(boolean what, boolean when, boolean reach, Set<String> newCalls, Set<String> goneCalls, Set<String> newChecks,
+      Set<String> goneChecks) {
     boolean any() {
       return what || when || reach;
     }
@@ -63,12 +67,15 @@ final class PathChange {
     goneCalls.removeAll(b.dataCalls());
     Set<String> newChecks = new TreeSet<>(b.checkCalls());
     newChecks.removeAll(a.checkCalls());
+    Set<String> goneChecks = new TreeSet<>(a.checkCalls());
+    goneChecks.removeAll(b.checkCalls());
     return new Change(a.reaches() && b.reaches() && !a.data().equals(b.data()),
-        a.reaches() && b.reaches() && !a.checks().equals(b.checks()), a.reaches() != b.reaches(), newCalls, goneCalls, newChecks);
+        a.reaches() && b.reaches() && !a.checks().equals(b.checks()), a.reaches() != b.reaches(), newCalls, goneCalls, newChecks,
+        goneChecks);
   }
 
   static Slices slices(String owner, MethodNode mn, Predicate<AbstractInsnNode> toward) {
-    if (mn == null || mn.instructions.size() == 0) return new Slices("", "", Set.of(), Set.of(), false);
+    if (mn == null || mn.instructions.size() == 0) return Slices.NONE;
     Map<AbstractInsnNode, Set<AbstractInsnNode>> next = new HashMap<>();
     Analyzer<Dep> analyzer = new Analyzer<>(new Deps()) {
       @Override
@@ -80,13 +87,13 @@ final class PathChange {
     try {
       frames = analyzer.analyze(owner, mn);
     } catch (AnalyzerException e) {
-      return new Slices("?", "?", Set.of(), Set.of(), false);
+      return new Slices("?", "?", Set.of(), Set.of(), false, Set.of(), Set.of());
     }
     List<AbstractInsnNode> targets = new ArrayList<>();
     for (AbstractInsnNode insn : mn.instructions) {
       if (frames[mn.instructions.indexOf(insn)] != null && toward.test(insn)) targets.add(insn);
     }
-    if (targets.isEmpty()) return new Slices("", "", Set.of(), Set.of(), false);
+    if (targets.isEmpty()) return Slices.NONE;
 
     // What feeds the calls: their arguments, and anything else done to those objects beforehand
     // (pet.setOwner(owner) before save(pet)).
@@ -124,7 +131,7 @@ final class PathChange {
       checks.add(insn);
       for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
     }
-    return new Slices(text(mn, data), text(mn, checks), calls(data), calls(checks), true);
+    return new Slices(text(mn, data), text(mn, checks), calls(data), calls(checks), true, data, checks);
   }
 
   private static boolean reaches(AbstractInsnNode from, List<AbstractInsnNode> targets,
@@ -242,6 +249,10 @@ final class PathChange {
     }
   }
 
+  private static boolean isRef(Type t) {
+    return t.getSort() == Type.OBJECT || t.getSort() == Type.ARRAY;
+  }
+
   private static final class Deps extends Interpreter<Dep> {
     private final SourceInterpreter sizes = new SourceInterpreter();
     private int params;
@@ -265,13 +276,21 @@ final class PathChange {
     @Override
     public Dep newParameterValue(boolean isInstanceMethod, int local, Type type) {
       // Each parameter is an object of its own: work done on it is work done on what was passed in.
-      return new Dep(type.getSize(), Set.of(), Set.of("param" + (params++)));
+      // A number or a flag has no identity: passing the same one to two calls joins nothing.
+      Object me = "param" + (params++);
+      return new Dep(type.getSize(), Set.of(), isRef(type) ? Set.of(me) : Set.of());
     }
 
     @Override
     public Dep newOperation(AbstractInsnNode insn) {
       int size = sizes.newOperation(insn).getSize();
-      return new Dep(size, Set.of(insn), Set.of(insn));
+      boolean ref = switch (insn.getOpcode()) {
+        case Opcodes.ACONST_NULL, Opcodes.NEW -> true;
+        case Opcodes.LDC -> !(((org.objectweb.asm.tree.LdcInsnNode) insn).cst instanceof Number);
+        case Opcodes.GETSTATIC -> isRef(Type.getType(((FieldInsnNode) insn).desc));
+        default -> false;
+      };
+      return new Dep(size, Set.of(insn), ref ? Set.of(insn) : Set.of());
     }
 
     @Override
@@ -282,8 +301,13 @@ final class PathChange {
     @Override
     public Dep unaryOperation(AbstractInsnNode insn, Dep value) {
       SourceValue s = sizes.unaryOperation(insn, new SourceValue(value.size));
-      boolean sameObject = insn.getOpcode() == Opcodes.CHECKCAST;
-      return new Dep(s.getSize(), with(value.deps, insn), sameObject ? value.origins : Set.of(insn));
+      boolean ref = switch (insn.getOpcode()) {
+        case Opcodes.GETFIELD -> isRef(Type.getType(((FieldInsnNode) insn).desc));
+        case Opcodes.NEWARRAY, Opcodes.ANEWARRAY -> true;
+        default -> false;
+      };
+      Set<Object> origins = insn.getOpcode() == Opcodes.CHECKCAST ? value.origins : ref ? Set.of(insn) : Set.of();
+      return new Dep(s.getSize(), with(value.deps, insn), origins);
     }
 
     @Override
@@ -291,7 +315,7 @@ final class PathChange {
       SourceValue s = sizes.binaryOperation(insn, new SourceValue(a.size), new SourceValue(b.size));
       Set<AbstractInsnNode> d = with(a.deps, insn);
       d.addAll(b.deps);
-      return new Dep(s.getSize(), d, Set.of(insn));
+      return new Dep(s.getSize(), d, insn.getOpcode() == Opcodes.AALOAD ? Set.of(insn) : Set.of());
     }
 
     @Override
@@ -299,7 +323,7 @@ final class PathChange {
       Set<AbstractInsnNode> d = with(a.deps, insn);
       d.addAll(b.deps);
       d.addAll(c.deps);
-      return new Dep(1, d, Set.of(insn));
+      return new Dep(1, d, Set.of());
     }
 
     @Override
@@ -309,7 +333,10 @@ final class PathChange {
       SourceValue s = sizes.naryOperation(insn, in);
       Set<AbstractInsnNode> d = new HashSet<>(Set.of(insn));
       for (Dep v : values) d.addAll(v.deps);
-      return new Dep(s.getSize(), d, Set.of(insn));
+      boolean ref = insn instanceof MethodInsnNode m ? isRef(Type.getReturnType(m.desc))
+          : insn instanceof InvokeDynamicInsnNode i ? isRef(Type.getReturnType(i.desc))
+          : insn.getOpcode() == Opcodes.MULTIANEWARRAY;
+      return new Dep(s.getSize(), d, ref ? Set.of(insn) : Set.of());
     }
 
     @Override

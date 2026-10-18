@@ -28,7 +28,7 @@ import org.objectweb.asm.tree.MethodNode;
 public final class Behaviour {
 
   /** A way into the program. {@code id} is what stays the same when its code moves: a route, a job name, a method. */
-  public record Entry(String id, String kind, String label, MethodKey method) {}
+  public record Entry(String id, String kind, MethodKey method) {}
 
   /** Something the program does to the world: {@code verb} is writes, deletes, calls or sends. */
   public record Effect(String verb, String target) implements Comparable<Effect> {
@@ -61,6 +61,8 @@ public final class Behaviour {
   public final Map<String, Map<Effect, List<MethodKey>>> effects = new TreeMap<>();
   /** For each effect, the methods that can lead to it: a change in one changes how the effect happens. */
   final Map<Effect, Set<MethodKey>> leadsTo = new HashMap<>();
+  /** Ways in that cause nothing: there, but not worth showing until they do. */
+  final Set<String> quiet = new TreeSet<>();
   /** For each entry point, every method its calls can run before reaching an effect. */
   final Map<String, Set<MethodKey>> runs = new HashMap<>();
   /** The calls where each effect happens. */
@@ -102,11 +104,14 @@ public final class Behaviour {
       for (Node t : threads) {
         if (threadsSeen.add(t.method())) work.add(Map.entry(threadEntry(t.method()), g.nodesOf.getOrDefault(t.method(), List.of(t))));
       }
-      if (found.isEmpty()) continue;
+      if (found.isEmpty()) {
+        if (!entry.kind().equals("uncalled")) quiet.add(entry.id());
+        continue;
+      }
       // Two methods can carry the same name (an override and its interface, two threads of one class).
       String id = entry.id();
       for (int i = 2; entries.containsKey(id); i++) id = entry.id() + " (" + i + ")";
-      entry = new Entry(id, entry.kind(), id, entry.method());
+      entry = new Entry(id, entry.kind(), entry.method());
       entries.put(id, entry);
       effects.put(id, found);
       runs.put(id, seen);
@@ -239,6 +244,21 @@ public final class Behaviour {
     }) MESSAGES.add(Policy.rule("SENDS", s));
   }
 
+  /** The effect a call causes, generated clients included, or null. */
+  public Effect effectFor(MethodKey m) {
+    Effect e = effectOf(m);
+    if (e != null) return e;
+    boolean client = declaredClients.contains(m.owner()) || builtClients.containsKey(m.owner());
+    return client && !m.name().startsWith("<") && !analysis.graph.hasBody(m) ? new Effect("calls", simple(m.owner()) + " (remote)") : null;
+  }
+
+  /** Every call that causes an effect, for a recording agent to watch. */
+  public Set<MethodKey> effectCalls() {
+    Set<MethodKey> out = new TreeSet<>(analysis.sinks.keySet());
+    for (MethodKey t : analysis.graph.targets) if (effectFor(t) != null) out.add(t);
+    return out;
+  }
+
   private Effect effectOf(MethodKey m) {
     Set<String> domains = analysis.sinks.get(m);
     if (domains != null) {
@@ -357,7 +377,7 @@ public final class Behaviour {
     if (m.name().equals("<init>") || m.name().equals("<clinit>")) return null;
 
     String route = route(cn, mn);
-    if (route != null) return new Entry(route, "route", route, m);
+    if (route != null) return new Entry(route, "route", m);
     for (AnnotationNode an : annotations(cn, mn)) {
       String kind = TRIGGERS.get(an.desc);
       if (kind == null) continue;
@@ -369,10 +389,10 @@ public final class Behaviour {
         case "event" -> "on event " + eventName(m);
         default -> "on startup " + simple(m.owner()) + "." + m.name();
       };
-      return new Entry(label, kind, label, m);
+      return new Entry(label, kind, m);
     }
     if (m.name().equals("main") && m.desc().equals("([Ljava/lang/String;)V") && (mn.access & Opcodes.ACC_STATIC) != 0) {
-      return new Entry("main " + simple(m.owner()), "startup", "main " + simple(m.owner()), m);
+      return new Entry("main " + simple(m.owner()), "startup", m);
     }
     // Code that nothing in the program calls but that runs anyway: a thread's body, a callback a
     // library holds, a framework hook. Its name is where it lives.
@@ -384,13 +404,13 @@ public final class Behaviour {
     String lifecycle = LIFECYCLE.get(m.name());
     if (lib != null && lifecycle != null) {
       String label = lifecycle + " " + outer(m.owner());
-      return new Entry(label, "startup", label, m);
+      return new Entry(label, "startup", m);
     }
     String where = CallGraph.enclosing(m) != null ? "code started in " + simple(m.owner()) + "." + CallGraph.enclosing(m)
         : lib != null ? simple(lib) + " callback " + outer(m.owner()) + "." + m.name()
         : "uncalled " + simple(m.owner()) + "." + m.name();
     String kind = CallGraph.enclosing(m) != null ? "thread" : lib != null ? "callback" : "uncalled";
-    return new Entry(where, kind, where, m);
+    return new Entry(where, kind, m);
   }
 
   /** Framework hooks by name: when they run tells the reader more than the interface they belong to. */
@@ -413,7 +433,7 @@ public final class Behaviour {
     ClassNode cn = analysis.graph.program.classes.get(m.owner());
     String label = cn != null && cn.outerMethod != null ? "thread " + outer(m.owner()) + "." + cn.outerMethod
         : "thread " + simple(m.owner());
-    return new Entry(label, "thread", label, m);
+    return new Entry(label, "thread", m);
   }
 
   private static boolean isThread(String lib) {
@@ -551,7 +571,10 @@ public final class Behaviour {
   /** Every effect, with the entry points that can cause it. */
   public Map<Effect, Set<String>> causes() {
     Map<Effect, Set<String>> out = new TreeMap<>();
-    effects.forEach((id, es) -> es.keySet().forEach(e -> out.computeIfAbsent(e, k -> new TreeSet<>()).add(id)));
+    effects.forEach((id, es) -> {
+      // Code nothing calls is not a way in.
+      if (!entries.get(id).kind().equals("uncalled")) es.keySet().forEach(e -> out.computeIfAbsent(e, k -> new TreeSet<>()).add(id));
+    });
     return out;
   }
 }

@@ -29,7 +29,7 @@ import org.objectweb.asm.tree.TryCatchBlockNode;
  * Java agent: {@code -javaagent:skimit-agent.jar=config=FILE,out=FILE}. A {@code %p} in the output
  * name is replaced by the process id.
  *
- * <p>The config file is written by {@code skimit analyze --agent-config}. It lists the application
+ * <p>The config file is written by {@code skimit map --agent-config}. It lists the application
  * classes to instrument ({@code class a/b/C}), the sinks ({@code sink owner#name#desc}) and the
  * framework methods that hold a flow open ({@code boundary owner#name}). The trace is written when
  * the JVM exits and is read by {@code skimit verify}.
@@ -103,13 +103,15 @@ public final class Agent {
   }
 
   private static void wrap(ClassNode cn, MethodNode mn, int id, boolean isSink, Set<String> sinks) {
-    // A hit before every call that lands on a sink.
+    // A hit before every call that lands on a sink, and word when it returns.
     for (AbstractInsnNode insn : mn.instructions.toArray()) {
       if (insn instanceof MethodInsnNode) {
         MethodInsnNode mi = (MethodInsnNode) insn;
-        if (sinks.contains(mi.owner + "#" + mi.name + "#" + mi.desc)) {
-          mn.instructions.insertBefore(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, RECORDER, "hit", "()V", false));
-        }
+        String sink = mi.owner + "#" + mi.name + "#" + mi.desc;
+        if (!sinks.contains(sink)) continue;
+        int sinkId = Recorder.sink(sink);
+        mn.instructions.insertBefore(insn, call("hit", sinkId));
+        mn.instructions.insert(insn, call("done", sinkId));
       }
     }
     // exit before every return
@@ -118,7 +120,7 @@ public final class Agent {
       if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN) mn.instructions.insertBefore(insn, call("exit", id));
     }
     InsnList head = new InsnList();
-    if (isSink) head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RECORDER, "hitEntry", "()V", false));
+    if (isSink) head.add(call("hitEntry", Recorder.sink(cn.name + "#" + mn.name + "#" + mn.desc)));
     head.add(call("enter", id));
     LabelNode start = new LabelNode();
     head.add(start);

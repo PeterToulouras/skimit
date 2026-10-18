@@ -1,6 +1,5 @@
 package dev.skimit.analyzer;
 
-import dev.skimit.analyzer.Analysis.Verdict;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -8,152 +7,39 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.function.BiPredicate;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.MethodNode;
 
-/** Compares two analyses and sorts every changed method into a review bucket with its reason. */
+/**
+ * Which methods a change touched: each method after the change matched with the one it was
+ * (through renamed lambdas and moved classes), and compared by its bytecode. Comments, formatting,
+ * renamed locals and moved code are not changes.
+ */
 public final class Differ {
 
-  public enum Bucket { MUST, SHOULD, SKIP }
+  /** A method the change added, removed or changed; {@code was} is what it was called before, when its class moved. */
+  public record Change(MethodKey method, String kind, MethodKey was) {}
 
-  public record Change(
-      MethodKey method,
-      String kind,
-      Bucket bucket,
-      Verdict verdict,
-      Set<String> domains,
-      Set<String> newDomains,
-      String reason,
-      List<MethodKey> witness,
-      String explanation,
-      Map<String, List<MethodKey>> proofs,
-      MethodKey was) {}
-
-  /**
-   * A class that was moved or renamed: gone from {@code from}, found again at {@code to}, with at
-   * least half its methods the same once the new names are read as the old ones. Its methods are
-   * compared with the methods they were, so a body that did not change is not a change.
-   */
-  public record Move(String from, String to, int methods, int unchanged, List<Carried> carried) {}
-
-  /** A method that moved with its class and did not change, and the verdict it carries along. */
-  public record Carried(MethodKey method, Verdict verdict, Set<String> domains, List<MethodKey> witness) {}
-
-  /** Classes moved or renamed by the change, by their name before it. */
-  public final List<Move> moves = new ArrayList<>();
-
+  public final List<Change> changes = new ArrayList<>();
   /** Reads the names of moved classes after the change as the names they had before. */
   final Renames renames;
-
   /** For each change, the lines of the source diff that belong to it; filled by {@link #attach}. */
   public final Map<MethodKey, List<SourceDiff.Line>> lines = new HashMap<>();
 
-  public final List<Change> changes = new ArrayList<>();
-  /** Sinks added or removed. Changing what counts as critical is itself always reviewed. */
-  public final List<String> policy = new ArrayList<>();
-  /** Structure changes: API surface, new dependencies between classes, position moves. */
-  public final List<String> shape = new ArrayList<>();
-  /** Untouched methods that can now reach a sink because of something they call. */
-  public final List<MethodKey> ripple = new ArrayList<>();
-
-  /** An untouched method that was isolated and is now part of a critical flow, and why. */
-  public record Reached(MethodKey method, Verdict now, String reason, String explanation, List<MethodKey> witness) {}
-
-  /**
-   * Untouched methods that were isolated before the change and are not any more. A reviewer was
-   * told their bodies could be skimmed; now they take part in a critical flow and must be read
-   * once. They are not changes and are not counted as changed methods.
-   */
-  public final List<Reached> reached = new ArrayList<>();
-  /** True when the changed code was judged by the built-in sinks because none were declared. */
-  public final boolean usingDefaultSinks;
-  /** True when the code after the change has no sink at all, so nothing in it is critical. */
-  public final boolean noSinks;
-
   public Differ(Analysis base, Analysis head) {
-    usingDefaultSinks = head.usingDefaultSinks;
-    noSinks = head.sinks.isEmpty();
     renames = new Renames(renames(base, head));
     BiPredicate<MethodKey, MethodKey> sameBody = (b, h) -> base.hashes.get(b).equals(head.hashes.get(h))
         || !renames.map.isEmpty() && base.hashes.get(b).equals(head.graph.bodyHash(h, renames));
     Map<MethodKey, MethodKey> earlier = counterparts(base, head, renames, sameBody);
-    for (MethodKey m : head.verdicts.keySet()) {
+    for (MethodKey m : head.methods()) {
       MethodKey b = earlier.get(m);
-      boolean existed = b != null;
-      boolean same = existed && sameBody.test(b, m);
-      Verdict hv = head.verdict(m);
-      Verdict bv = existed ? base.verdict(b) : Verdict.ISOLATED;
-      Set<String> baseDomains = bv == Verdict.ON_PATH ? base.domains(b) : Set.of();
-      if (same) {
-        if (hv == Verdict.ON_PATH && bv != Verdict.ON_PATH) ripple.add(m);
-        if (bv == Verdict.ISOLATED && hv != Verdict.ISOLATED) {
-          reached.add(new Reached(m, hv, head.reason(m), head.explain(m), head.witness(m)));
-        }
-        continue;
-      }
-      String kind = existed ? "changed" : "added";
-      MethodKey was = existed && !renames.back(m).equals(m) ? b : null;
-      if (hv == Verdict.ON_PATH) {
-        Set<String> fresh = new TreeSet<>(head.domains(m));
-        fresh.removeAll(baseDomains);
-        add(m, m, was, kind, Bucket.MUST, head, existed ? fresh : Set.of(), null);
-      } else if (bv == Verdict.ON_PATH) {
-        add(m, b, was, kind, Bucket.MUST, base, Set.of(), "could reach a critical sink before this change and no longer can");
-      } else if (hv == Verdict.INFLUENCES || hv == Verdict.UNPROVEN) {
-        add(m, m, was, kind, Bucket.SHOULD, head, Set.of(), null);
-      } else if (bv == Verdict.INFLUENCES || bv == Verdict.UNPROVEN) {
-        add(m, b, was, kind, Bucket.SHOULD, base, Set.of(), "before this change, " + base.reason(b));
-      } else {
-        add(m, m, was, kind, Bucket.SKIP, head, Set.of(), null);
-      }
+      if (b != null && sameBody.test(b, m)) continue;
+      changes.add(new Change(m, b != null ? "changed" : "added", b != null && !renames.back(m).equals(m) ? b : null));
     }
     Set<MethodKey> matched = new HashSet<>(earlier.values());
-    for (MethodKey m : base.verdicts.keySet()) {
-      if (matched.contains(m)) continue;
-      Verdict bv = base.verdict(m);
-      Bucket b = bv == Verdict.ON_PATH ? Bucket.MUST : bv == Verdict.ISOLATED ? Bucket.SKIP : Bucket.SHOULD;
-      add(m, m, null, "removed", b, base, Set.of(), bv == Verdict.ISOLATED ? null : "before removal, " + base.reason(m));
-    }
-
-    // A sink in a class that moved is the same sink under its new name.
-    Set<MethodKey> stillSinks = new HashSet<>();
-    for (Map.Entry<MethodKey, Set<String>> e : head.sinks.entrySet()) {
-      MethodKey was = renames.back(e.getKey());
-      Set<String> before = base.sinks.get(was);
-      if (before != null) stillSinks.add(was);
-      if (before == null) policy.add("sink added: " + e.getKey().pretty() + " " + e.getValue());
-      else if (!before.equals(e.getValue())) policy.add("sink domains changed: " + e.getKey().pretty() + " " + before + " -> " + e.getValue());
-    }
-    for (Map.Entry<MethodKey, Set<String>> e : base.sinks.entrySet()) {
-      if (!stillSinks.contains(e.getKey())) policy.add("sink removed: " + e.getKey().pretty() + " " + e.getValue());
-    }
-
-    for (Map.Entry<String, String> e : renames.map.entrySet()) {
-      int methods = 0;
-      int unchanged = 0;
-      List<Carried> carried = new ArrayList<>();
-      // Every method counts here, abstract ones too: an interface that moved is all signatures.
-      for (MethodKey m : head.hashes.keySet()) {
-        if (!CallGraph.topLevel(m.owner()).equals(e.getKey())) continue;
-        methods++;
-        MethodKey b = earlier.getOrDefault(m, renames.back(m));
-        if (!base.hashes.containsKey(b) || !sameBody.test(b, m)) continue;
-        unchanged++;
-        Verdict v = head.sinks.containsKey(m) ? Verdict.ON_PATH : head.verdict(m);
-        Set<String> domains = head.sinks.containsKey(m) ? head.sinks.get(m) : v == Verdict.UNPROVEN ? Set.of() : head.domains(m);
-        if (v != Verdict.ISOLATED) carried.add(new Carried(m, v, domains, head.witness(m)));
-      }
-      moves.add(new Move(e.getValue().replace('/', '.'), e.getKey().replace('/', '.'), methods, unchanged, carried));
-    }
-    moves.sort(java.util.Comparator.comparing(Move::from));
-
-    shape(base, head, renames);
+    for (MethodKey m : base.methods()) if (!matched.contains(m)) changes.add(new Change(m, "removed", null));
   }
 
   /** Rewrites the names that moved classes have after the change into the names they had before. */
@@ -240,17 +126,6 @@ public final class Differ {
     return out;
   }
 
-  /** Two dotted class names without the packages they share, but one: where it moved within. */
-  static String[] shortened(String a, String b) {
-    String[] x = a.split("\\.");
-    String[] y = b.split("\\.");
-    int same = 0;
-    while (same < x.length - 1 && same < y.length - 1 && x[same].equals(y[same])) same++;
-    int from = Math.max(0, same - 1);
-    return new String[] {String.join(".", java.util.Arrays.copyOfRange(x, from, x.length)),
-        String.join(".", java.util.Arrays.copyOfRange(y, from, y.length))};
-  }
-
   private static String simpleName(String internal) {
     return internal.substring(internal.lastIndexOf('/') + 1);
   }
@@ -265,15 +140,15 @@ public final class Differ {
     Map<MethodKey, MethodKey> out = new HashMap<>();
     Map<String, List<MethodKey>> baseGroups = new TreeMap<>();
     Map<String, List<MethodKey>> headGroups = new TreeMap<>();
-    for (MethodKey m : base.verdicts.keySet()) {
+    for (MethodKey m : base.methods()) {
       String enc = CallGraph.enclosing(m);
       if (enc != null) baseGroups.computeIfAbsent(m.owner() + "#" + enc + m.desc(), k -> new ArrayList<>()).add(m);
     }
-    for (MethodKey m : head.verdicts.keySet()) {
+    for (MethodKey m : head.methods()) {
       String enc = CallGraph.enclosing(m);
       MethodKey was = renames.back(m);
       if (enc != null) headGroups.computeIfAbsent(was.owner() + "#" + enc + was.desc(), k -> new ArrayList<>()).add(m);
-      else if (base.verdicts.containsKey(was)) out.put(m, was);
+      else if (base.methods().contains(was)) out.put(m, was);
     }
     for (Map.Entry<String, List<MethodKey>> e : headGroups.entrySet()) {
       List<MethodKey> after = e.getValue();
@@ -290,18 +165,6 @@ public final class Differ {
       for (int i = 0; i < unmatched.size() && i < earlier.size(); i++) out.put(unmatched.get(i), earlier.get(i));
     }
     return out;
-  }
-
-  /**
-   * {@code m} names the change; {@code in} is the same method in {@code from}; {@code was} is the
-   * method it was before the change when its class moved or was renamed, else null.
-   */
-  private void add(MethodKey m, MethodKey in, MethodKey was, String kind, Bucket bucket, Analysis from,
-      Set<String> newDomains, String reason) {
-    Verdict v = from.verdict(in);
-    changes.add(new Change(m, kind, bucket, v, v == Verdict.UNPROVEN ? Set.of() : from.domains(in), newDomains,
-        reason != null ? reason : from.reason(in), from.witness(in), from.explain(in), from.proofs(in),
-        was));
   }
 
   /**
@@ -324,77 +187,5 @@ public final class Differ {
     Set<String> shown = new HashSet<>();
     for (MethodKey m : lines.keySet()) shown.add(m.owner() + "#" + m.name());
     lines.keySet().removeIf(m -> CallGraph.enclosing(m) != null && shown.contains(m.owner() + "#" + CallGraph.enclosing(m)));
-  }
-
-  public long count(Bucket b) {
-    return changes.stream().filter(c -> c.bucket() == b).count();
-  }
-
-  private void shape(Analysis base, Analysis head, Renames renames) {
-    Map<String, ClassNode> bc = base.graph.program.classes;
-    Map<String, ClassNode> hc = head.graph.program.classes;
-    Set<String> carriedOver = new HashSet<>();
-    for (ClassNode cn : hc.values()) {
-      String was = renames.apply(cn.name);
-      ClassNode old = bc.get(was);
-      if (old == null) {
-        if (exposed(cn.access)) shape.add("new public type " + dotted(cn.name));
-        continue;
-      }
-      if (!was.equals(cn.name)) {
-        carriedOver.add(was);
-        if (exposed(cn.access) && renames.map.containsKey(cn.name)) {
-          String[] n = shortened(old.name.replace('/', '.'), cn.name.replace('/', '.'));
-          shape.add("public type moved " + n[0] + " -> " + n[1]);
-        }
-      }
-      // A moved class is compared under its old name, so only real API changes show.
-      Set<String> before = api(old, UnaryOperator.identity());
-      Set<String> after = api(cn, renames);
-      for (String s : after) if (!before.contains(s)) shape.add("new public method " + s);
-      for (String s : before) if (!after.contains(s)) shape.add("public method removed " + s);
-    }
-    for (ClassNode cn : bc.values()) {
-      if (!hc.containsKey(cn.name) && !carriedOver.contains(cn.name) && exposed(cn.access)) {
-        shape.add("public type removed " + dotted(cn.name));
-      }
-    }
-    for (Map.Entry<String, Set<String>> e : head.graph.classDeps.entrySet()) {
-      Set<String> before = base.graph.classDeps.get(renames.apply(e.getKey()));
-      if (before == null) continue;
-      for (String dep : e.getValue()) {
-        if (!before.contains(renames.apply(dep))) {
-          shape.add("new dependency " + dotted(e.getKey()) + " -> " + dotted(dep)
-              + " (" + head.positions.get(dep) + ", " + head.dependents.get(dep) + " dependents)");
-        }
-      }
-    }
-    for (Map.Entry<String, Analysis.Position> e : head.positions.entrySet()) {
-      String was = renames.apply(e.getKey());
-      Analysis.Position before = base.positions.get(was);
-      if (before != null && before != e.getValue()) {
-        shape.add("position " + dotted(e.getKey()) + ": " + before + " -> " + e.getValue()
-            + " (" + base.dependents.get(was) + " -> " + head.dependents.get(e.getKey()) + " dependents)");
-      }
-    }
-  }
-
-  private static boolean exposed(int access) {
-    return (access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED)) != 0 && (access & Opcodes.ACC_SYNTHETIC) == 0;
-  }
-
-  private static Set<String> api(ClassNode cn, UnaryOperator<String> rename) {
-    Set<String> out = new TreeSet<>();
-    if (!exposed(cn.access)) return out;
-    for (MethodNode mn : cn.methods) {
-      if (exposed(mn.access) && !mn.name.equals("<clinit>")) {
-        out.add(new MethodKey(rename.apply(cn.name), mn.name, rename.apply(mn.desc)).pretty());
-      }
-    }
-    return out;
-  }
-
-  private static String dotted(String internal) {
-    return internal.substring(internal.lastIndexOf('/') + 1).replace('$', '.');
   }
 }
