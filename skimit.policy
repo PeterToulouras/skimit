@@ -1,4 +1,5 @@
-# What is critical in skimit itself: anything that decides a verdict or what a manifest says.
-sink VERDICT dev.skimit.analyzer.Analysis#findSinks
-sink VERDICT dev.skimit.analyzer.Analysis#propagate
-sink MANIFEST dev.skimit.analyzer.Differ#<init>
+# What skimit itself does to the world: it writes the files it is asked for, and nothing else.
+sink FILES java.nio.file.Files#write*
+
+# Only the command line writes them; reading the classes and working out what they do never does.
+only Main writes *

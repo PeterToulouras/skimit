@@ -1,0 +1,4 @@
+# What the shop's owners decided, checked on every change.
+
+# Reading a report never moves money.
+never "GET *" writes *
