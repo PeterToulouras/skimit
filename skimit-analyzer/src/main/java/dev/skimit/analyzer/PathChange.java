@@ -43,15 +43,55 @@ import org.objectweb.asm.util.TraceMethodVisitor;
  */
 final class PathChange {
 
-  /** The two slices of one version of a method, as comparable text and as the calls they make. */
-  record Slices(String data, String checks, Set<String> dataCalls, Set<String> checkCalls, boolean reaches,
-      Set<AbstractInsnNode> dataInsns, Set<AbstractInsnNode> checkInsns) {
-    static final Slices NONE = new Slices("", "", Set.of(), Set.of(), false, Set.of(), Set.of());
+  /**
+   * The two slices of one version of a method: as comparable text, and as what they name (the calls
+   * they make) and the values they use (the constants in them, in program order).
+   */
+  record Slices(String data, String checks, Set<String> dataNames, Set<String> checkNames, List<String> dataValues,
+      List<String> checkValues, Ops dataOps, Ops checkOps, boolean reaches, Set<AbstractInsnNode> dataInsns,
+      Set<AbstractInsnNode> checkInsns) {
+    static final Slices NONE = new Slices("", "", Set.of(), Set.of(), List.of(), List.of(), Ops.NONE, Ops.NONE, false, Set.of(),
+        Set.of());
+  }
+
+  /** The comparisons and the arithmetic among some instructions, counted by kind. */
+  record Ops(List<Integer> comparisons, List<Integer> arithmetic) {
+    static final Ops NONE = new Ops(List.of(), List.of());
+
+    static Ops of(Set<AbstractInsnNode> insns) {
+      List<Integer> cmp = new ArrayList<>();
+      List<Integer> calc = new ArrayList<>();
+      for (AbstractInsnNode insn : insns) {
+        int op = insn.getOpcode();
+        if (op >= Opcodes.LCMP && op <= Opcodes.IF_ACMPNE || op == Opcodes.IFNULL || op == Opcodes.IFNONNULL) cmp.add(op);
+        if (op >= Opcodes.IADD && op <= Opcodes.LXOR) calc.add(op);
+      }
+      cmp.sort(null);
+      calc.sort(null);
+      return new Ops(cmp, calc);
+    }
+  }
+
+  /** What one part of a method gained and lost: the calls it names and the values it uses. */
+  record Delta(Set<String> newNames, Set<String> goneNames, List<String> newValues, List<String> goneValues,
+      boolean comparisons, boolean arithmetic) {
+    static Delta between(Set<String> namesBefore, Set<String> namesAfter, List<String> valuesBefore, List<String> valuesAfter,
+        Ops opsBefore, Ops opsAfter) {
+      Set<String> newNames = new TreeSet<>(namesAfter);
+      newNames.removeAll(namesBefore);
+      Set<String> goneNames = new TreeSet<>(namesBefore);
+      goneNames.removeAll(namesAfter);
+      List<String> newValues = new ArrayList<>(valuesAfter);
+      newValues.removeAll(valuesBefore);
+      List<String> goneValues = new ArrayList<>(valuesBefore);
+      goneValues.removeAll(valuesAfter);
+      return new Delta(newNames, goneNames, newValues, goneValues, !opsBefore.comparisons().equals(opsAfter.comparisons()),
+          !opsBefore.arithmetic().equals(opsAfter.arithmetic()));
+    }
   }
 
   /** What changed for the effect: in the data going into it, in the checks before it, or in whether this method reaches it at all. */
-  record Change(boolean what, boolean when, boolean reach, Set<String> newCalls, Set<String> goneCalls, Set<String> newChecks,
-      Set<String> goneChecks) {
+  record Change(boolean what, boolean when, boolean reach, Delta data, Delta check) {
     boolean any() {
       return what || when || reach;
     }
@@ -61,17 +101,63 @@ final class PathChange {
       String ownerAfter, MethodNode after, Predicate<AbstractInsnNode> towardAfter) {
     Slices a = slices(ownerBefore, before, towardBefore);
     Slices b = slices(ownerAfter, after, towardAfter);
-    Set<String> newCalls = new TreeSet<>(b.dataCalls());
-    newCalls.removeAll(a.dataCalls());
-    Set<String> goneCalls = new TreeSet<>(a.dataCalls());
-    goneCalls.removeAll(b.dataCalls());
-    Set<String> newChecks = new TreeSet<>(b.checkCalls());
-    newChecks.removeAll(a.checkCalls());
-    Set<String> goneChecks = new TreeSet<>(a.checkCalls());
-    goneChecks.removeAll(b.checkCalls());
     return new Change(a.reaches() && b.reaches() && !a.data().equals(b.data()),
-        a.reaches() && b.reaches() && !a.checks().equals(b.checks()), a.reaches() != b.reaches(), newCalls, goneCalls, newChecks,
-        goneChecks);
+        a.reaches() && b.reaches() && !a.checks().equals(b.checks()), a.reaches() != b.reaches(),
+        Delta.between(a.dataNames(), b.dataNames(), a.dataValues(), b.dataValues(), a.dataOps(), b.dataOps()),
+        Delta.between(a.checkNames(), b.checkNames(), a.checkValues(), b.checkValues(), a.checkOps(), b.checkOps()));
+  }
+
+  /**
+   * A whole method as a reader of its result needs it: what it names and the values it uses, and
+   * which of them its branches test. Logging and the exceptions it throws are left out.
+   */
+  record Body(String text, Set<String> checkNames, List<String> checkValues, Ops checkOps, Set<String> names, List<String> values,
+      Ops ops) {
+    static final Body NONE = new Body("", Set.of(), List.of(), Ops.NONE, Set.of(), List.of(), Ops.NONE);
+  }
+
+  private static final Pattern LOGGING = Pattern.compile("(?i).*(/log|logger|logging|/slf4j/|/log4j|PrintStream).*");
+
+  static Body body(String owner, MethodNode mn) {
+    if (mn == null || mn.instructions.size() == 0) return Body.NONE;
+    Frame<Dep>[] frames;
+    try {
+      frames = new Analyzer<>(new Deps()).analyze(owner, mn);
+    } catch (AnalyzerException e) {
+      return Body.NONE;
+    }
+    Set<AbstractInsnNode> all = new HashSet<>();
+    Set<AbstractInsnNode> checks = new HashSet<>();
+    Set<AbstractInsnNode> aside = new HashSet<>();
+    for (AbstractInsnNode insn : mn.instructions) {
+      Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
+      if (f == null) continue;
+      all.add(insn);
+      boolean logs = insn instanceof MethodInsnNode m && LOGGING.matcher(m.owner).matches();
+      if (logs || insn.getOpcode() == Opcodes.ATHROW) {
+        aside.add(insn);
+        for (Dep d : inputs(insn, f)) aside.addAll(d.deps);
+      }
+      if (isBranch(insn)) {
+        checks.add(insn);
+        for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
+      }
+    }
+    all.removeAll(aside);
+    checks.removeAll(aside);
+    Set<String> named = new TreeSet<>(names(all));
+    // The fields it reads say how it gets at things: userService, or userServiceSupplier.
+    for (AbstractInsnNode insn : all) {
+      if (insn instanceof FieldInsnNode f && insn.getOpcode() == Opcodes.GETFIELD && !core(f.owner)) {
+        named.add(f.owner.equals(owner) ? f.name : Behaviour.simple(f.owner) + "." + f.name);
+      }
+    }
+    return new Body(text(mn, all), names(checks), values(mn, checks), Ops.of(checks), named, values(mn, all), Ops.of(all));
+  }
+
+  private static boolean isBranch(AbstractInsnNode insn) {
+    return insn instanceof JumpInsnNode && insn.getOpcode() != Opcodes.GOTO && insn.getOpcode() != Opcodes.JSR
+        || insn instanceof TableSwitchInsnNode || insn instanceof LookupSwitchInsnNode;
   }
 
   static Slices slices(String owner, MethodNode mn, Predicate<AbstractInsnNode> toward) {
@@ -87,7 +173,7 @@ final class PathChange {
     try {
       frames = analyzer.analyze(owner, mn);
     } catch (AnalyzerException e) {
-      return new Slices("?", "?", Set.of(), Set.of(), false, Set.of(), Set.of());
+      return new Slices("?", "?", Set.of(), Set.of(), List.of(), List.of(), Ops.NONE, Ops.NONE, false, Set.of(), Set.of());
     }
     List<AbstractInsnNode> targets = new ArrayList<>();
     for (AbstractInsnNode insn : mn.instructions) {
@@ -120,9 +206,7 @@ final class PathChange {
     // What decides whether they run: a branch with a target call reachable down one side only.
     Set<AbstractInsnNode> checks = new HashSet<>();
     for (AbstractInsnNode insn : mn.instructions) {
-      boolean branch = insn instanceof JumpInsnNode && insn.getOpcode() != Opcodes.GOTO && insn.getOpcode() != Opcodes.JSR
-          || insn instanceof TableSwitchInsnNode || insn instanceof LookupSwitchInsnNode;
-      if (!branch) continue;
+      if (!isBranch(insn)) continue;
       Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
       if (f == null) continue;
       Set<Boolean> outcomes = new HashSet<>();
@@ -131,7 +215,8 @@ final class PathChange {
       checks.add(insn);
       for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
     }
-    return new Slices(text(mn, data), text(mn, checks), calls(data), calls(checks), true, data, checks);
+    return new Slices(text(mn, data), text(mn, checks), names(data), names(checks), values(mn, data), values(mn, checks),
+        Ops.of(data), Ops.of(checks), true, data, checks);
   }
 
   private static boolean reaches(AbstractInsnNode from, List<AbstractInsnNode> targets,
@@ -171,6 +256,7 @@ final class PathChange {
 
   private static final Pattern LOCAL = Pattern.compile("(LOAD|STORE|IINC) (\\d+)");
   private static final Pattern LAMBDA = Pattern.compile("lambda\\$([\\w$]*?)\\$\\d+");
+  private static final Pattern PACKAGE = Pattern.compile("(?:[a-z_][\\w$]*/)+(?=[A-Za-z_$])");
 
   /** The instructions in program order, with locals renumbered by first use, so that moving code around them does not count. */
   private static String text(MethodNode mn, Set<AbstractInsnNode> keep) {
@@ -191,7 +277,9 @@ final class PathChange {
       m.appendReplacement(out, m.group(1) + " v" + n);
     }
     m.appendTail(out);
-    return LAMBDA.matcher(out).replaceAll("lambda\\$$1\\$");
+    // A class is known by its simple name: a library that moved a class to another package, or a
+    // class of the program that moved, has not changed what the method does.
+    return PACKAGE.matcher(LAMBDA.matcher(out).replaceAll("lambda\\$$1\\$")).replaceAll("");
   }
 
   /**
@@ -199,7 +287,7 @@ final class PathChange {
    * new Owner. The language's own library is left out (boxing, string building, collection
    * helpers): it says how the code is written, not what it asks of the system.
    */
-  private static Set<String> calls(Set<AbstractInsnNode> insns) {
+  private static Set<String> names(Set<AbstractInsnNode> insns) {
     Set<String> out = new TreeSet<>();
     for (AbstractInsnNode insn : insns) {
       if (insn instanceof MethodInsnNode m && !m.name.equals("<init>") && !core(m.owner)) out.add(Behaviour.simple(m.owner) + "." + m.name);
@@ -207,6 +295,41 @@ final class PathChange {
       if (insn instanceof FieldInsnNode f && insn.getOpcode() == Opcodes.GETSTATIC && !core(f.owner)) out.add(Behaviour.simple(f.owner) + "." + f.name);
     }
     return out;
+  }
+
+  /**
+   * The constants among the instructions, in program order, as a person would write them: 90,
+   * 0.9, "PENDING". Zero, one and minus one are kept, for a reader to drop where they say nothing
+   * (see {@link #small}).
+   */
+  private static List<String> values(MethodNode mn, Set<AbstractInsnNode> keep) {
+    Set<String> out = new LinkedHashSet<>();
+    for (AbstractInsnNode insn : mn.instructions) {
+      if (!keep.contains(insn)) continue;
+      String v = value(insn);
+      if (v != null) out.add(v);
+    }
+    return new ArrayList<>(out);
+  }
+
+  private static String value(AbstractInsnNode insn) {
+    int op = insn.getOpcode();
+    if (op >= Opcodes.ICONST_M1 && op <= Opcodes.ICONST_5) return String.valueOf(op - Opcodes.ICONST_0);
+    if (op == Opcodes.LCONST_0 || op == Opcodes.LCONST_1) return String.valueOf(op - Opcodes.LCONST_0);
+    if (op >= Opcodes.FCONST_0 && op <= Opcodes.FCONST_2) return (op - Opcodes.FCONST_0) + ".0";
+    if (op == Opcodes.DCONST_0 || op == Opcodes.DCONST_1) return (op - Opcodes.DCONST_0) + ".0";
+    if (op == Opcodes.BIPUSH || op == Opcodes.SIPUSH) return String.valueOf(((org.objectweb.asm.tree.IntInsnNode) insn).operand);
+    if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc) {
+      Object c = ldc.cst;
+      if (c instanceof Number n) return c instanceof Double || c instanceof Float ? String.valueOf(n.doubleValue()) : String.valueOf(n.longValue());
+      if (c instanceof String str) return "\"" + (str.length() > 30 ? str.substring(0, 29) + "…" : str) + "\"";
+    }
+    return null;
+  }
+
+  /** Zero, one and minus one: they count loops and stand for true and false more often than they mean a value. */
+  static boolean small(String value) {
+    return value.equals("0") || value.equals("1") || value.equals("-1") || value.equals("0.0") || value.equals("1.0");
   }
 
   private static boolean core(String owner) {

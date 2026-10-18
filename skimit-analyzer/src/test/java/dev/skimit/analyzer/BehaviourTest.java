@@ -120,7 +120,7 @@ class BehaviourTest {
   void aNewCheckBeforeAWriteNamesWhatItAsks() throws IOException {
     Feed f = feed(program(SERVICE, CONTROLLER),
         program(SERVICE.replace("repo.save(id);", "if (repo.count() > 100) return; repo.save(id);"), CONTROLLER));
-    assertEquals(List.of("POST /api/orders: new check before it writes Order, on OrderRepository.count (in OrderService.place)"),
+    assertEquals(List.of("POST /api/orders: new check before it writes Order, on OrderRepository.count against 100 (in OrderService.place)"),
         f.lines.stream().map(Feed.Line::text).toList());
   }
 
@@ -137,7 +137,7 @@ class BehaviourTest {
     String ids = "public class Ids { static long next(long id) { return id + 1; } static String tag(long id) { return \"o\" + id; } }";
     String using = SERVICE.replace("repo.save(id);", "System.out.println(Ids.tag(id)); repo.save(Ids.next(id));");
     Feed f = feed(program(using, CONTROLLER, ids), program(using, CONTROLLER, ids.replace("id + 1", "id + 2")));
-    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.next)"), f.lines.stream().map(Feed.Line::text).toList());
+    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.next: 1 → 2)"), f.lines.stream().map(Feed.Line::text).toList());
     // A helper whose result goes elsewhere is not about the write.
     assertTrue(feed(program(using, CONTROLLER, ids), program(using, CONTROLLER, ids.replace("\"o\"", "\"order-\""))).isEmpty());
   }
@@ -147,7 +147,7 @@ class BehaviourTest {
     String ids = "public class Ids { static long next(long id) { return id + 1; } static long salt(long id) { return id * 3; } }";
     String using = SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id) + Ids.salt(id));");
     Feed f = feed(program(using, CONTROLLER, ids), program(using, CONTROLLER, ids.replace("id + 1", "id + 2").replace("id * 3", "id * 4")));
-    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.next and Ids.salt)"),
+    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.next: 1 → 2; Ids.salt: 3 → 4)"),
         f.lines.stream().map(Feed.Line::text).toList());
     assertEquals(2, f.lines.get(0).methods().size());
   }
@@ -157,8 +157,40 @@ class BehaviourTest {
     String limits = "public class Limits { static boolean allowed(long id) { return id < 100; } }";
     String guarded = SERVICE.replace("repo.save(id);", "if (Limits.allowed(id)) repo.save(id);");
     Feed f = feed(program(guarded, CONTROLLER, limits), program(guarded, CONTROLLER, limits.replace("100", "1000")));
-    assertEquals(List.of("POST /api/orders: changed the check before it writes Order (in Limits.allowed)"),
+    assertEquals(List.of("POST /api/orders: changed the check before it writes Order (in Limits.allowed: 100 → 1000)"),
         f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void whenNothingNamedChangedTheKindOfLogicThatDidIsSaid() throws IOException {
+    String limits = "public class Limits { static boolean allowed(long id) { return id < 100; } }";
+    String guarded = SERVICE.replace("repo.save(id);", "if (Limits.allowed(id)) repo.save(id);");
+    Feed f = feed(program(guarded, CONTROLLER, limits), program(guarded, CONTROLLER, limits.replace("id < 100", "id <= 100")));
+    assertEquals(List.of("POST /api/orders: changed the check before it writes Order (in Limits.allowed: a comparison changed)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+    String ids = "public class Ids { static long next(long id) { return id + 1; } }";
+    String using = SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id));");
+    Feed g = feed(program(using, CONTROLLER, ids), program(using, CONTROLLER, ids.replace("id + 1", "id - 1")));
+    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.next: a calculation changed)"),
+        g.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aHelperThatFeedsBothTheCheckAndTheDataNamesTheEffectOnce() throws IOException {
+    String limits = "public class Limits { static long cap(long id) { return id < 100 ? id : 100; } }";
+    String using = SERVICE.replace("repo.save(id);", "long c = Limits.cap(id); if (c > 5) repo.save(c);");
+    Feed f = feed(program(using, CONTROLLER, limits), program(using, CONTROLLER, limits.replace("id < 100", "id <= 100")));
+    assertEquals(List.of("POST /api/orders: writes Order with a changed check and different data (in Limits.cap: a comparison changed)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aHelperThatMovedPackageButDoesTheSameIsNotALine() throws IOException {
+    String ids = "package util; public class Ids { public static long next(long id) { return id + 1; } }";
+    String using = SERVICE.replace("repo.save(id);", "repo.save(util.Ids.next(id));");
+    Feed f = feed(program(using, CONTROLLER, ids),
+        program(using.replace("util.Ids", "common.Ids"), CONTROLLER, ids.replace("package util;", "package common;")));
+    assertTrue(f.isEmpty(), f.lines.toString());
   }
 
   @Test

@@ -168,6 +168,14 @@ public final class Feed {
     Map<String, Map<MethodKey, Set<String>>> roles = new HashMap<>();
     for (Map.Entry<MethodKey, Set<String>> e : offPaths.entrySet()) {
       MethodKey m = e.getKey();
+      // What changed in it, said once whatever effects it touches: "now checks Order.quantity against 10".
+      MethodKey was = earlier.getOrDefault(m, m);
+      if (!base.analysis.graph.methods.containsKey(was)) was = sameName(base, diff.renames.back(m));
+      PathChange.Body then = was == null ? null : PathChange.body(was.owner(), base.analysis.graph.methods.get(was));
+      PathChange.Body now = PathChange.body(m.owner(), head.analysis.graph.methods.get(m));
+      // Only the packages of the classes it uses changed (javax to jakarta): it does the same.
+      if (then != null && then.text().equals(now.text())) continue;
+      String detail = then == null ? "" : bodyDetail(then, now);
       for (Map.Entry<Effect, Set<String>> fx : byEffect(e.getValue(), after).entrySet()) {
         Effect x = fx.getKey();
         Map<MethodKey, Set<String>> from = roles.computeIfAbsent(m + "\u0000" + x, k -> feeds(head, m, x));
@@ -181,12 +189,14 @@ public final class Feed {
         }
         waysByRole.forEach((r, ways) -> {
           List<String> parts = new ArrayList<>();
-          if (r.contains("check")) parts.add("changed the check before it " + EFFECT);
-          if (r.contains("data")) parts.add(EFFECT + " with different data");
+          if (r.contains("check") && r.contains("data")) parts.add(EFFECT + " with a changed check and different data");
+          else if (r.contains("check")) parts.add("changed the check before it " + EFFECT);
+          else if (r.contains("data")) parts.add(EFFECT + " with different data");
           if (parts.isEmpty()) parts.add(EFFECT + ", through a method too long to compare");
           How h = how(hows, String.join("; ", parts), m);
           h.ways.addAll(ways);
           h.effects.add(x);
+          h.details.put(m, detail);
         });
       }
     }
@@ -213,6 +223,8 @@ public final class Feed {
     final List<MethodKey> methods = new ArrayList<>();
     final Set<String> ways = new TreeSet<>();
     final Set<Effect> effects = new TreeSet<>();
+    /** For a method off the way, what changed in it, in words. */
+    final Map<MethodKey, String> details = new HashMap<>();
 
     How(String template) {
       this.template = template;
@@ -249,20 +261,100 @@ public final class Feed {
         return n;
       });
       m.methods.addAll(h.methods);
+      m.details.putAll(h.details);
     }
     List<How> sorted = new ArrayList<>(merged.values());
     sorted.sort(Comparator.comparing((How h) -> h.effects.stream().noneMatch(x -> x.verb().equals("deletes")))
         .thenComparing(h -> -h.ways.size()).thenComparing(h -> h.template));
     List<Line> out = new ArrayList<>();
     for (How h : sorted) {
-      String who = h.ways.size() == 1 ? h.ways.iterator().next() : h.ways.size() + " ways in (" + first(h.ways, 2) + ")";
+      String who = h.ways.size() == 1 ? h.ways.iterator().next() : h.ways.size() + " ways in (" + examples(h.ways) + ")";
       String what = h.template.replace(EFFECT, effectList(h.effects));
       String text = h.template.startsWith(NEW_ON_THE_WAY) ? names(h.methods) + " " + what
-          : h.methods.isEmpty() ? what : what + " (in " + names(h.methods) + ")";
+          : h.methods.isEmpty() ? what : what + " (in " + where(h) + ")";
       boolean deletes = h.effects.stream().anyMatch(x -> x.verb().equals("deletes"));
       out.add(new Line(deletes ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + text, List.copyOf(h.methods)));
     }
     return out;
+  }
+
+  /** The methods a line is about, with what changed in them when few enough different things did. */
+  private static String where(How h) {
+    if (h.details.values().stream().allMatch(String::isEmpty)) return names(h.methods);
+    // Methods that changed the same way are named together: "A, B and 4 more: userService → userServiceSupplier".
+    Map<String, List<MethodKey>> byDetail = new java.util.LinkedHashMap<>();
+    h.methods.stream().sorted(Comparator.comparing(Feed::shortName))
+        .forEach(m -> byDetail.computeIfAbsent(h.details.getOrDefault(m, ""), k -> new ArrayList<>()).add(m));
+    if (byDetail.size() > 3) return names(h.methods);
+    return byDetail.entrySet().stream().map(e -> names(e.getValue()) + (e.getKey().isEmpty() ? "" : ": " + e.getKey()))
+        .collect(Collectors.joining("; "));
+  }
+
+  /**
+   * What changed in a method whose result goes into an effect, from what it names and uses before
+   * and after: "now checks Order.quantity against 10; now uses 90 and 100", "100 → 1000".
+   */
+  static String bodyDetail(PathChange.Body before, PathChange.Body after) {
+    List<String> parts = new ArrayList<>();
+    Set<String> said = new HashSet<>();
+    PathChange.Delta checks = PathChange.Delta.between(before.checkNames(), after.checkNames(), before.checkValues(),
+        after.checkValues(), before.checkOps(), after.checkOps());
+    if (!checks.newNames().isEmpty()) {
+      parts.add("now checks " + list(checks.newNames()) + against(checks.newValues()));
+      said.addAll(checks.newNames());
+      said.addAll(checks.newValues());
+    }
+    if (!checks.goneNames().isEmpty()) {
+      parts.add("no longer checks " + list(checks.goneNames()));
+      said.addAll(checks.goneNames());
+      said.addAll(checks.goneValues());
+    }
+    PathChange.Delta uses = PathChange.Delta.between(before.names(), after.names(), before.values(), after.values(),
+        before.ops(), after.ops());
+    List<String> newNames = uses.newNames().stream().filter(n -> !said.contains(n)).toList();
+    List<String> goneNames = uses.goneNames().stream().filter(n -> !said.contains(n)).toList();
+    List<String> newValues = uses.newValues().stream().filter(n -> !said.contains(n)).toList();
+    List<String> goneValues = uses.goneValues().stream().filter(n -> !said.contains(n)).toList();
+    if (newNames.size() == 1 && goneNames.size() == 1) parts.add(goneNames.get(0) + " → " + newNames.get(0));
+    else {
+      if (!newNames.isEmpty()) parts.add("now uses " + list(newNames));
+      if (!goneNames.isEmpty()) parts.add("no longer uses " + list(goneNames));
+    }
+    String v = values(newValues, goneValues, "uses ");
+    if (!v.isEmpty()) parts.add(v);
+    // Nothing named or used changed: say what kind of logic did.
+    if (parts.isEmpty() && checks.comparisons()) parts.add("a comparison changed");
+    if (parts.isEmpty() && uses.arithmetic()) parts.add("a calculation changed");
+    return String.join("; ", parts);
+  }
+
+  /** "100 → 1000", "1 → 2", or "now uses 10, 90 and 100", "no longer uses 5"; a lone 0 or 1 is left out. */
+  private static String values(List<String> now, List<String> gone, String verb) {
+    if (!now.isEmpty() && now.size() == gone.size() && now.size() <= 3) {
+      List<String> pairs = new ArrayList<>();
+      for (int i = 0; i < now.size(); i++) pairs.add(gone.get(i) + " → " + now.get(i));
+      return String.join(", ", pairs);
+    }
+    now = plain(now);
+    gone = plain(gone);
+    List<String> parts = new ArrayList<>();
+    if (!now.isEmpty()) parts.add("now " + verb + list(now));
+    if (!gone.isEmpty()) parts.add("no longer " + verb + list(gone));
+    return String.join(", ", parts);
+  }
+
+  private static List<String> plain(List<String> values) {
+    return values.stream().filter(v -> !PathChange.small(v)).toList();
+  }
+
+  private static String against(List<String> values) {
+    return values.isEmpty() ? "" : " against " + list(values);
+  }
+
+  /** "A", "A and B", "A, B and 3 more". */
+  private static String list(java.util.Collection<String> items) {
+    List<String> l = new ArrayList<>(items);
+    return l.size() <= 2 ? String.join(" and ", l) : String.join(", ", l.subList(0, 2)) + " and " + (l.size() - 2) + " more";
   }
 
   /** "writes Order", "deletes App and writes Audit", "deletes App, writes Audit and 5 more". */
@@ -364,28 +456,44 @@ public final class Feed {
     List<String> parts = new ArrayList<>();
     if (c.reach()) parts.add("now reaches " + x + " here");
     if (c.when()) {
-      if (!c.goneChecks().isEmpty()) parts.add("no longer checks " + calls(c.goneChecks()) + " before it " + x);
-      if (!c.newChecks().isEmpty()) parts.add("new check before it " + x + ", on " + calls(c.newChecks()));
-      if (c.newChecks().isEmpty() && c.goneChecks().isEmpty()) parts.add("changed the check before it " + x);
+      PathChange.Delta d = c.check();
+      if (!d.goneNames().isEmpty()) parts.add("no longer checks " + list(d.goneNames()) + " before it " + x);
+      if (!d.newNames().isEmpty()) parts.add("new check before it " + x + ", on " + list(d.newNames()) + against(d.newValues()));
+      if (d.newNames().isEmpty() && d.goneNames().isEmpty()) {
+        String v = values(d.newValues(), d.goneValues(), "against ");
+        if (v.isEmpty() && d.comparisons()) v = "a comparison changed";
+        parts.add("changed the check before it " + x + (v.isEmpty() ? "" : ": " + v));
+      }
     }
     if (c.what()) {
-      if (c.newCalls().isEmpty() && c.goneCalls().isEmpty()) parts.add(x + " with different data");
-      else {
-        String s = x + (c.newCalls().isEmpty() ? "" : " now using " + calls(c.newCalls()));
-        if (!c.goneCalls().isEmpty()) s += (c.newCalls().isEmpty() ? " no longer using " : ", no longer ") + calls(c.goneCalls());
+      PathChange.Delta d = c.data();
+      boolean swap = !d.newValues().isEmpty() && d.newValues().size() == d.goneValues().size() && d.newValues().size() <= 3;
+      if (d.newNames().isEmpty() && d.goneNames().isEmpty() && (swap || plain(d.newValues()).isEmpty() && plain(d.goneValues()).isEmpty())) {
+        String v = values(d.newValues(), d.goneValues(), "");
+        if (v.isEmpty() && d.arithmetic()) v = "a calculation changed";
+        parts.add(x + " with different data" + (v.isEmpty() ? "" : ": " + v));
+      } else {
+        List<String> now = new ArrayList<>(d.newNames());
+        now.addAll(plain(d.newValues()));
+        List<String> gone = new ArrayList<>(d.goneNames());
+        gone.addAll(plain(d.goneValues()));
+        String s = x + (now.isEmpty() ? "" : " now using " + list(now));
+        if (!gone.isEmpty()) s += (now.isEmpty() ? " no longer using " : ", no longer ") + list(gone);
         parts.add(s);
       }
+    }
+    // Both changed and neither can say more: one phrase, so the effects are named once.
+    int check = parts.indexOf("changed the check before it " + x);
+    int data = parts.indexOf(x + " with different data");
+    if (check >= 0 && data >= 0) {
+      parts.set(check, x + " with a changed check and different data");
+      parts.remove(data);
     }
     return String.join("; ", parts);
   }
 
   private static String targets(List<Effect> effects) {
     return effects.stream().map(x -> x.target().replaceFirst("^out ", "")).collect(Collectors.joining(" and "));
-  }
-
-  private static String calls(Set<String> names) {
-    List<String> l = new ArrayList<>(names);
-    return l.size() <= 2 ? String.join(" and ", l) : String.join(", ", l.subList(0, 2)) + " and " + (l.size() - 2) + " more";
   }
 
   /**
@@ -516,6 +624,12 @@ public final class Feed {
   private static String effects(Set<Effect> effects) {
     List<String> words = effects.stream().map(Effect::toString).toList();
     return words.size() <= 3 ? String.join(", ", words) : String.join(", ", words.subList(0, 3)) + " and " + (words.size() - 3) + " more";
+  }
+
+  /** One or two of the ways in, as many as read in a glance. */
+  private static String examples(Set<String> ways) {
+    List<String> two = ways.stream().limit(2).toList();
+    return first(ways, two.size() == 2 && two.get(0).length() + two.get(1).length() <= 60 ? 2 : 1);
   }
 
   private static String first(Set<String> items, int n) {
