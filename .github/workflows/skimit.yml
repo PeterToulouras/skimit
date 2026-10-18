@@ -1,11 +1,11 @@
-# skimit reviewing skimit: every pull request gets a review manifest in its job summary.
+# skimit on skimit: every pull request gets what it did to skimit's behaviour in its job summary.
 name: skimit
 on:
   pull_request:
 permissions:
   contents: read
 jobs:
-  manifest:
+  behaviour:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

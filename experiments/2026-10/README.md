@@ -1,7 +1,18 @@
 # October 2026 experiment: raw data
 
-The write-up is [docs/experiment.md](../../docs/experiment.md). All results here were computed with
-skimit 0.1.1 unless a file name says otherwise.
+Two sets of results on the same commits and test suites.
+
+**skimit 0.2.0**, what each change did to behaviour, reported in
+[docs/evidence.md](../../docs/evidence.md):
+
+| File | What it is |
+|---|---|
+| `feed-0.2.0/<project>.jsonl` | One line per commit tried: the headline, the counts, and every line `skimit diff` printed, or why it was skipped |
+| `verify-0.2.0/<project>.txt` | Output of `skimit verify` on each project's test suite |
+
+**skimit 0.1**, which sorted changed methods into review buckets, written up in
+[docs/experiment.md](../../docs/experiment.md). These were computed with skimit 0.1.1 unless a file
+name says otherwise; the scripts that made them are in the `v0.1.8` tag.
 
 | File | What it is |
 |---|---|

@@ -1,0 +1,25 @@
+## skimit verify
+
+The run caused an effect 1434 times, in 415 of 47993 flows; 6515 application methods ran.
+
+42 effects seen, from 260 ways in.
+
+**No misses.** Everything the run did is in the map.
+
+15 things the run did went through reflection, which the map does not follow, so they are not misses:
+
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsPreviousReleaseOfRetainedHistory()` deletes Release
+- `ReleaseHistoryServiceTest.invokeCleanReleaseHistory(int)` deletes ReleaseHistory
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsReleaseReferencedByRetainedHistory` deletes Release
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryIgnoresInactiveGrayReleaseRules` deletes Release
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryTransactionalRollBack` deletes ReleaseHistory
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsReleaseReferencedByActiveGrayReleaseRule` deletes Release
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryTransactionalRollBack[lambda](Method, ReleaseHistoryService)` deletes ReleaseHistory
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryPhysicallyDeletesUnreferencedRows()` deletes Release
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryTransactionalRollBack[lambda](Method, ReleaseHistoryService)` deletes Release
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryPhysicallyDeletesUnreferencedRows()` deletes ReleaseHistory
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryIgnoresInactiveGrayReleaseRules` deletes ReleaseHistory
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsReleaseReferencedByActiveGrayReleaseRule` deletes ReleaseHistory
+- `ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsPreviousReleaseOfRetainedHistory()` deletes ReleaseHistory
+- `uncalled ReleaseHistoryServiceTest.testCleanReleaseHistoryKeepsReleaseReferencedByRetainedHistory` deletes ReleaseHistory
+- `ReleaseHistoryServiceTest.invokeCleanReleaseHistory(int)` deletes Release

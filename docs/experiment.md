@@ -3,6 +3,11 @@
 *October 2026. Everything here can be re-run; the raw data is in
 [experiments/2026-10](../experiments/2026-10).*
 
+> This experiment measured skimit 0.1, which sorted the methods a change touched into review
+> buckets. From 0.2.0 skimit says what a change did to behaviour instead, and the buckets are
+> gone; the numbers for that are in [evidence.md](evidence.md). To re-run what is below, check out
+> the `v0.1.8` tag, which has the commands and scripts it names.
+
 skimit reads compiled Java and sorts the methods a change touches into three buckets: **must
 review** (the method can reach something you declared critical), **should review** (it takes part
 in such a flow, or the analysis cannot prove it does not), and **isolated** (nothing connects it to
@@ -69,8 +74,8 @@ parent, and runs `skimit diff` between the two. 758 commits were tried. 183 no l
 commits whose dependencies have disappeared or that do not compile on JDK 21), which leaves 575.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="replay-dark.svg">
-  <img src="replay-light.svg" alt="What 575 real commits to nine open-source projects needed, under one fixed rule" width="780">
+  <source media="(prefers-color-scheme: dark)" srcset="replay-0.1-dark.svg">
+  <img src="replay-0.1-light.svg" alt="What 575 real commits to nine open-source projects needed, under one fixed rule" width="780">
 </picture>
 
 | Project | Tried | Analysed | No code change | Isolated only | Should review | Must review |
@@ -315,7 +320,7 @@ test suites whose sinks changed; re-recorded, its tests now reach a sink 1,003 t
 ## Reproduce it
 
 ```
-git clone https://github.com/PeterToulouras/skimit && cd skimit && mvn -q package
+git clone https://github.com/PeterToulouras/skimit && cd skimit && git checkout v0.1.8 && mvn -q package
 
 # 1. replay a project's history under the fixed rule
 scripts/replay.sh path/to/project experiments/2026-10/data-writes.policy 100

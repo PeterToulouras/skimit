@@ -2,72 +2,68 @@
 
 ## Known gaps
 
-What the model still leaves out. `skimit verify` will show you whether any of these bite on your
-code.
+What the analysis does not see yet. `skimit verify` on your own tests shows whether any of these
+bite on your code.
 
-- **Stores are coarse.** A repository or mapper is one store. A raw database client (JDBC, an
-  `EntityManager`, a DynamoDB client) is one store for the whole program, so every writer through
-  it influences every critical reader. Declare `store` lines for the tables that matter if that
-  flags too much. State kept somewhere unrecognised (a file, a message queue, another service) is
-  not modelled unless you declare it.
-- **A writer's callers.** The method that performs a write is flagged; a caller that only passes
-  it a value is flagged when the flow reaches it by a call, not otherwise.
-- **Guards.** A permission check is a sink like any other: its callers are on a path. Whether each
-  caller uses the answer correctly is not checked.
-- **Alternatives in a loop.** Where one call can land on several methods, the ones not on a path
-  are treated as alternatives. A loop that calls several of them in turn (a listener list) lets an
-  earlier one throw before a later one runs; that is missed.
-- **Changes through a reference.** A method that mutates an object it got from a field is caught
-  only when the field is a collection or array.
-- **Frameworks beyond the built-in list.** Spring MVC, Jakarta lifecycle and AspectJ annotations
-  are known. Another framework's equivalents need `participant` lines.
-- **Library types behind library types.** The hierarchy is known only for the classes you pass in.
-  A class that implements a library interface is not matched to calls made through that
-  interface's own parents.
-- **Flows that leave the process.** A call to another service is not a sink unless you declare
-  it. Code that guards or prepares such a call is isolated until you do.
-- **Expressions in strings.** A bean method named in an annotation expression
-  (`@PreAuthorize("@rules.canEdit(#id)")`) is followed. Other expression languages, templates and
-  configuration files that name methods are not.
+- **Ways in from other frameworks.** Spring MVC, JAX-RS, `@Scheduled`, XXL-JOB, Kafka, RabbitMQ,
+  JMS and SQS listeners, Spring events, startup hooks and threads are recognised. A gRPC service,
+  a GraphQL resolver, or a Quarkus, Micronaut or Vert.x handler is not: nothing in the program
+  calls it, so it is treated as code nothing calls and left out.
+- **Reads are not effects.** Reading data is not on the map, however sensitive. Declare a read as
+  a sink (`sink SECRETS com.acme.vault.Vault#get*`) if reading it should count.
+- **SQL kept outside the bytecode.** A query in a MyBatis XML mapper, or in any file the classes
+  read at run time, is not seen. A change to it alone says nothing; a change to the method that
+  runs it does.
+- **Tables behind a raw client.** A repository, mapper or DAO is one store, named after it. A raw
+  database client (JDBC, an `EntityManager`, a DynamoDB client) is one store per kind of client,
+  so writes to different tables through the same client are one effect.
+- **How lines say where more often than what.** A line about how an effect is done names the
+  method that changed and, when it can, the calls that are new or gone. When the change is inside
+  an expression (a different number, a different field), the line says "with different data" or
+  "changed the check" and the code is a click away.
+- **Dispatch the call graph cannot follow.** Reflection, method handles, `ServiceLoader`, and
+  calls named in strings other than annotation expressions are not followed. An effect reached
+  only that way is missing from the way in that causes it; `skimit verify` lists what a run did
+  through reflection apart from its misses. Spring events are the exception: an event listener is
+  a way in of its own.
+- **Clients built an unusual way.** An interface a library turns into a client is recognised when
+  it is declared as one, or handed to a factory call whose result is cast to it. Other ways of
+  building a client make its calls look like calls to an interface with no implementation, which
+  cause nothing.
+- **Every implementation is followed.** A call through an interface may land on any of its
+  implementations, so a way in is credited with what all of them do, even when configuration
+  picks one.
+- **Callbacks are named after the library type.** A method a library calls back is shown as
+  `UserDetailsService callback HrService.loadUserByUsername`, which says who calls it but not
+  when.
 - **`toString`, `hashCode` and `equals` on a plain `Object`.** These calls are not followed into
   the application, just as string concatenation reaches `toString` inside the library unseen.
-  A `toString` that writes something critical would be missed.
-- **Reflection by another name.** Opaque calls are matched by a list. A reflective path through a
-  library that is not on the list is invisible.
 - **Lambda order within one method.** A lambda is known by its enclosing method and its place
-  among that method's lambdas of the same type, matched across a change by its body first. Adding a
-  lambda to a method no longer touches other methods, but reordering same-typed lambdas inside one
-  method that also changes them can pair the wrong two.
-- **What a moved class carries besides its methods.** A class that moved or was renamed is
-  matched with what it was by its methods' bytecode. An annotation on the class itself, such as a
-  changed request path on a controller, is not compared; the move is still listed, so its new home
-  can be checked.
-- **Kotlin, Scala, Groovy.** They compile to bytecode and should load, but nothing has been tested.
+  among that method's lambdas of the same type, matched across a change by its body first.
+  Reordering same-typed lambdas inside one method that also changes them can pair the wrong two.
+- **Kotlin, Scala, Groovy.** They compile to bytecode that skimit reads. Kotlin was tried on one
+  project and needs work on its own idioms; the others are untested.
 
 ## Roadmap
 
-1. Tell tables apart behind a raw database client, from the SQL or the request it is given.
-2. Replace the call rule with a backward data-flow slice from the sink's arguments, so that a
-   helper called after the critical call stops counting.
-3. Read Spring's ahead-of-time output and bean metadata to turn framework wiring into ordinary
-   edges.
-4. Accept a library classpath for hierarchy only.
-5. A GitHub Action that builds base and head, posts the manifest as a pull request comment and
-   sets a status.
-6. Serve the same verdicts to editors through a language server.
+1. Say what changed in the data, not only where: the field or value that is new.
+2. Tell tables apart behind a raw database client, from the SQL or the request it is given.
+3. Ways in from gRPC, GraphQL, Quarkus and Micronaut.
+4. A map by area of the system, for codebases with hundreds of ways in.
+5. Kotlin.
 
 ## Prior art
 
-- Error Prone's `@RestrictedApi`, Rust's `unsafe`, Kotlin's `@RequiresOptIn`: compiler-enforced
-  markers at the call site. skimit derives the reach of a marker instead of requiring one per
-  caller.
-- Google's Safe Coding work: keep risky operations inside a few expert-reviewed abstractions and
-  let the type checker cover the rest.
-- Meta's Diff Risk Score and RADAR, and similar risk-tiering in other review tools: the same goal,
-  reached with learned scores over the diff.
-- WALA, Soot and OPAL (call graphs from bytecode), CodeQL and Doop (facts and queries), ArchUnit
-  (architecture rules as tests): the machinery this builds on in spirit.
-- DO-178C and ISO 26262: criticality levels assigned to components, with rigor scaled to match.
+- API diff tools (japicmp, Revapi) and OpenAPI diff tools: what changed in the surface a program
+  offers. skimit adds what each part of that surface does, and how a change affects it.
+- ArchUnit, CodeQL and Semgrep: rules about code, checked on every change. skimit's rules are
+  about behaviour (which ways in may cause which effects), so they survive refactoring.
+- Meta's Diff Risk Score and similar risk scores over a diff: the same aim, reaching a reader with
+  less, through a learned score instead of a stated reason.
+- WALA, Soot and OPAL (call graphs from bytecode), and program slicing: the machinery this builds
+  on in spirit.
+- Error Prone's `@RestrictedApi`, Rust's `unsafe`, Google's Safe Coding work: keep the risky
+  operations few and named, and let tools cover the rest.
 
 ---
 

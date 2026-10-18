@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.2.0
+
+skimit now says what a change did to what the program does, instead of which methods to read.
+Code review by reading every line does not scale to the amount of code being written; what a
+person needs to know is what the system can now do, and whether it still keeps the rules the team
+set. This release is a different product on the same analysis.
+
+- **`map`: what the program does.** The ways into the program (HTTP routes, scheduled jobs,
+  message listeners, event handlers, startup hooks, threads) and the effects each can cause: data
+  written or deleted, other services called, messages and email sent. Effects come most
+  consequential first, seven at a time.
+- **`diff`: what a change did to that.** One sentence, then a line for each way in that gained or
+  lost an effect, each way in that appeared, went or was renamed, and each change to how an
+  existing effect happens: a new or removed check before it, different data going into it, a new
+  call on the way to it, with the method where it happened. Moved classes, renamed methods and
+  reformatted code say nothing. Seven lines show; the rest fold away. `--html` writes one page
+  with the code behind a line on request.
+- **Rules.** A policy file can say `never "GET *" writes *`, `only OrderService writes Order` or
+  `review deletes *`. A change that breaks one is the first line, and `--exit-code` fails on it
+  (and on anything a review rule says needs a person). A rule that was already broken before
+  the change is not held against it. A line in a policy file can end with a `# comment`.
+- **A sink you declare adds to the built-in rule** (data writes through repositories, mappers,
+  DAOs and database clients) instead of replacing it; `--no-default-sinks` still turns the rule off.
+- **Calls out and messages are effects out of the box**, including calls through generated
+  clients (Feign, Spring HTTP interfaces, MicroProfile REST client, Retrofit, and interfaces a
+  library turns into a client).
+- **`verify` checks the map** against a recorded run: every effect the run caused must be one the
+  map says its way in can cause. Traces from older agents are refused; record again.
+- **Action v1.** The feed goes in the job summary and, if asked, a pull request comment;
+  `fail-on-broken-rule` replaces `fail-on-must-review`, and the outputs are `broken`, `what` and
+  `how`. The page is attached as an artifact named after the job, or as the `artifact` input says.
+  `@v0` stays on 0.1.8.
+- **Removed:** the `analyze` command, the review buckets and verdicts, class positions, the
+  manifest and its report, and the policy lines `opaque`, `store` and `participant` (now ignored
+  with a warning).
+
+Measured on the same 575 replayed commits and six test suites as before, with no configuration:
+62% of commits changed nothing a way in does, 31% changed only how it does what it already did,
+and 7% changed what the system can do (0.1.8 put 39% in must review). The median commit with
+something to say needed 2 lines; 81% needed no more than 7. On the six test suites, no run did
+anything the map says it cannot. Per-commit results are in `experiments/2026-10/feed-0.2.0`.
+
 ## 0.1.8
 
 - **A report that says what to read.** The manifest and the HTML report open with one sentence

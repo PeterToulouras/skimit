@@ -1,0 +1,7 @@
+## skimit verify
+
+The run caused an effect 26 times, in 22 of 319 flows; 228 application methods ran.
+
+2 effects seen, from 16 ways in.
+
+**No misses.** Everything the run did is in the map.
