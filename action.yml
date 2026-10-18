@@ -15,9 +15,9 @@ inputs:
     required: false
     default: ''
   version:
-    description: skimit release to use, such as 0.1.5, or latest.
+    description: skimit release to use, such as 0.1.5. This version of the Action reads the review manifest of the 0.1 releases; for 0.2.0 and later use PeterToulouras/skimit@v1.
     required: false
-    default: latest
+    default: 0.1.8
   fail-on-must-review:
     description: Fail the job when anything lands in must review. Off by default, so the job only reports; a build that fails is reported as a warning, not a failure.
     required: false
