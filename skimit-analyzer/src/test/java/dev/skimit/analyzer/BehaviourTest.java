@@ -100,15 +100,35 @@ class BehaviourTest {
     assertTrue(f.structural());
   }
 
+  static Feed feed(String[] base, String[] head) throws IOException {
+    Analysis a = Compiler.analyze(base);
+    Analysis b = Compiler.analyze(head);
+    return new Feed(new Behaviour(a), new Behaviour(b), new Differ(a, b));
+  }
+
   @Test
-  void changedCodeOnTheWayToAnEffectIsAQuieterLine() throws IOException {
-    Analysis base = Compiler.analyze(program(SERVICE, CONTROLLER));
-    Analysis head = Compiler.analyze(program(SERVICE.replace("repo.save(id);", "repo.save(id * 2);"), CONTROLLER));
-    Feed f = new Feed(new Behaviour(base), new Behaviour(head), new Differ(base, head));
-    assertEquals(1, f.lines.size(), f.lines.toString());
-    assertEquals(Feed.Kind.CHANGED_PATH, f.lines.get(0).kind());
-    assertEquals("Writes Order: code on the way changed in OrderService.place (from POST /api/orders)", f.lines.get(0).text());
+  void aChangeToWhatGoesIntoAWriteSaysWhereTheDataNowComesFrom() throws IOException {
+    String ids = "public class Ids { static long next(long id) { return id + 1; } }";
+    Feed f = feed(program(SERVICE, CONTROLLER, ids), program(SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id));"), CONTROLLER, ids));
+    assertEquals(List.of("POST /api/orders: writes Order now using Ids.next (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+    assertEquals(Feed.Kind.CHANGED_HOW, f.lines.get(0).kind());
     assertFalse(f.structural());
+  }
+
+  @Test
+  void aNewCheckBeforeAWriteNamesWhatItAsks() throws IOException {
+    Feed f = feed(program(SERVICE, CONTROLLER),
+        program(SERVICE.replace("repo.save(id);", "if (repo.count() > 100) return; repo.save(id);"), CONTROLLER));
+    assertEquals(List.of("POST /api/orders: new check before it writes Order, on OrderRepository.count (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aChangeTheWriteDoesNotSeeIsNotALine() throws IOException {
+    Feed f = feed(program(SERVICE, CONTROLLER),
+        program(SERVICE.replace("repo.save(id);", "repo.save(id); System.out.println(\"saved \" + id);"), CONTROLLER));
+    assertTrue(f.isEmpty(), f.lines.toString());
   }
 
   @Test
@@ -141,5 +161,19 @@ class BehaviourTest {
     Analysis head = Compiler.analyze(program(SERVICE, CONTROLLER, unused));
     Feed f = new Feed(new Behaviour(base), new Behaviour(head), new Differ(base, head));
     assertTrue(f.isEmpty(), f.lines.toString());
+  }
+
+  @Test
+  void anInterfaceALibraryTurnsIntoHttpCallsIsACallOut() throws IOException {
+    String get = """
+        package retrofit2.http;
+        @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+        public @interface GET { String value(); }""";
+    String api = "public interface PaymentsApi { @retrofit2.http.GET(\"/charge\") String charge(long cents); }";
+    String local = "public class FakePayments implements PaymentsApi { public String charge(long cents) { return \"ok\"; } }";
+    String route = CONTROLLER.replace("service.place(id);", "service.place(id); payments.charge(id);")
+        .replace("OrderService service;", "OrderService service; PaymentsApi payments;");
+    Behaviour b = behaviour(program(SERVICE, route, get, api, local));
+    assertEquals(List.of("writes Order", "calls PaymentsApi (remote)"), effects(b).get("POST /api/orders"));
   }
 }

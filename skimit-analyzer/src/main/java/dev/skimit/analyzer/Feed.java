@@ -6,13 +6,16 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
 
 /**
  * What a change does to the program's behaviour, one line per thing a reader would want to know,
@@ -35,8 +38,10 @@ public final class Feed {
     RENAMED_WAY_IN,
     /** A way in can no longer cause something. */
     LOSES,
-    /** Same effects, but code on the way to one of them changed. */
-    CHANGED_PATH
+    /** Same effects, but a change decides differently whether, or with what, data is deleted. */
+    CHANGED_DELETE,
+    /** Same effects, but a change decides differently whether, or with what, one of them happens. */
+    CHANGED_HOW
   }
 
   public record Line(Kind kind, String text) {}
@@ -58,6 +63,9 @@ public final class Feed {
     // For each changed method, the (way in, effect) pairs whose path it lies on, when the pair
     // itself did not change. One line per group of methods that touch exactly the same pairs.
     Map<MethodKey, Set<String>> onPaths = new TreeMap<>();
+    // Lines about how something already done is done, merged across the ways in they apply to.
+    Map<String, Set<String>> waysByText = new TreeMap<>();
+    Map<String, Boolean> deletesByText = new HashMap<>();
     for (Map.Entry<String, Map<Effect, List<MethodKey>>> e : head.effects.entrySet()) {
       String id = e.getKey();
       // Code nothing calls is not a way in: a service written before its route, or dead code.
@@ -74,6 +82,15 @@ public final class Feed {
       }
       if (!was.equals(id) && namedOutside(head.entries.get(id))) {
         lines.add(new Line(Kind.RENAMED_WAY_IN, was + " is now " + id + " (it " + effects(e.getValue().keySet()) + ")"));
+      }
+      // Calling out by another means (a generated client instead of raw HTTP) is the same effect reached differently.
+      List<Effect> callsGained = gained.stream().filter(x -> x.verb().equals("calls")).toList();
+      List<Effect> callsLost = lost.stream().filter(x -> x.verb().equals("calls")).toList();
+      if (!callsGained.isEmpty() && !callsLost.isEmpty()) {
+        waysByText.computeIfAbsent("calls out a different way, " + targets(callsGained) + " instead of " + targets(callsLost),
+            k -> new TreeSet<>()).add(id);
+        gained.removeAll(callsGained);
+        lost.removeAll(callsLost);
       }
       for (Effect x : gained) {
         lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.GAINS,
@@ -96,28 +113,95 @@ public final class Feed {
       if (stillThere.contains(e.getKey()) || base.entries.get(e.getKey()).kind().equals("uncalled")) continue;
       lines.add(new Line(Kind.REMOVED_WAY_IN, "Removed: " + e.getKey() + " (it " + effects(e.getValue().keySet()) + ")"));
     }
-    Map<Set<String>, List<MethodKey>> byPairs = new LinkedHashMap<>();
+    // Each changed method on the way to an effect a way in already had: how it changes that effect,
+    // if at all. Lines with the same words are merged across ways in.
+    Map<MethodKey, MethodKey> earlier = new HashMap<>();
+    for (Differ.Change c : diff.changes) if (c.was() != null) earlier.put(c.method(), c.was());
     for (Map.Entry<MethodKey, Set<String>> e : onPaths.entrySet()) {
-      // A lambda is part of the method it is written in.
-      byPairs.computeIfAbsent(e.getValue(), k -> new ArrayList<>()).add(e.getKey());
-    }
-    for (Map.Entry<Set<String>, List<MethodKey>> e : byPairs.entrySet()) {
+      MethodKey m = e.getKey();
+      MethodKey was = earlier.getOrDefault(m, m);
+      MethodNode old = base.analysis.graph.methods.get(was);
+      MethodNode now = head.analysis.graph.methods.get(m);
       Map<Effect, Set<String>> byEffect = new TreeMap<>();
-      for (String pair : e.getKey()) {
+      for (String pair : e.getValue()) {
         String[] p = pair.split("\u0000", 2);
         Effect x = after.keySet().stream().filter(f -> f.toString().equals(p[0])).findFirst().orElseThrow();
         byEffect.computeIfAbsent(x, k -> new TreeSet<>()).add(p[1]);
       }
-      Set<String> ways = byEffect.values().stream().flatMap(Set::stream).collect(Collectors.toCollection(TreeSet::new));
-      String who = e.getValue().stream().map(Feed::shortName).distinct().limit(2).collect(Collectors.joining(", "))
-          + (e.getValue().stream().map(Feed::shortName).distinct().count() > 2 ? " and others" : "");
-      lines.add(new Line(Kind.CHANGED_PATH, cap(effects(byEffect.keySet())) + ": code on the way changed in " + who
-          + (ways.size() == 1 ? " (from " + ways.iterator().next() + ")" : " (from " + ways.size() + " ways in: " + first(ways, 2) + ")")));
+      for (Map.Entry<Effect, Set<String>> fx : byEffect.entrySet()) {
+        Effect x = fx.getKey();
+        String text;
+        if (old == null) {
+          text = shortName(m) + " is new on the way to: " + x;
+        } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
+          text = x + ", through " + shortName(m) + ", which changed and is too long to compare";
+        } else {
+          PathChange.Change c = PathChange.compare(was.owner(), old, toward(base, x), m.owner(), now, toward(head, x));
+          if (!c.any()) continue;
+          text = describe(x, c, m);
+        }
+        waysByText.computeIfAbsent(text, k -> new TreeSet<>()).addAll(fx.getValue());
+        deletesByText.put(text, x.verb().equals("deletes"));
+      }
     }
-    // Deletions of data rank first among changed paths too.
-    lines.sort(Comparator.comparing(Line::kind)
-        .thenComparing(l -> l.kind() == Kind.CHANGED_PATH && !l.text().toLowerCase().contains("deletes"))
-        .thenComparing(Line::text));
+    for (Map.Entry<String, Set<String>> e : waysByText.entrySet()) {
+      Set<String> ways = e.getValue();
+      String who = ways.size() == 1 ? ways.iterator().next() : ways.size() + " ways in (" + first(ways, 2) + ")";
+      lines.add(new Line(deletesByText.getOrDefault(e.getKey(), false) ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + e.getKey()));
+    }
+    lines.sort(Comparator.comparing(Line::kind).thenComparing(Line::text));
+  }
+
+  /** Methods longer than this are not sliced; a change in one is reported without detail. */
+  static final int SLICE_LIMIT = 4000;
+
+  /** Whether an instruction calls toward the effect: a method that leads to it, or the lambda that does. */
+  private static java.util.function.Predicate<AbstractInsnNode> toward(Behaviour b, Effect x) {
+    Set<MethodKey> lead = b.leadsTo.getOrDefault(x, Set.of());
+    Map<String, List<String>> owners = new HashMap<>();
+    for (MethodKey k : lead) owners.computeIfAbsent(k.name() + k.desc(), z -> new ArrayList<>()).add(k.owner());
+    CallGraph g = b.analysis.graph;
+    return insn -> {
+      if (insn instanceof InvokeDynamicInsnNode indy) {
+        MethodKey t = PathChange.lambdaTarget(indy);
+        return t != null && lead.contains(t);
+      }
+      if (!(insn instanceof MethodInsnNode mi)) return false;
+      List<String> os = owners.get(mi.name + mi.desc);
+      if (os == null) return false;
+      for (String o : os) {
+        if (o.equals(mi.owner) || g.subtypesOf(mi.owner).contains(o) || g.subtypesOf(o).contains(mi.owner)) return true;
+      }
+      return false;
+    };
+  }
+
+  /** "new check before it writes Pet, on ClinicService.findOwnerById; writes Pet now using …" with where it happens. */
+  private static String describe(Effect x, PathChange.Change c, MethodKey m) {
+    List<String> parts = new ArrayList<>();
+    if (c.reach()) parts.add("now reaches " + x + " here");
+    if (c.when()) {
+      parts.add(c.newChecks().isEmpty() ? "changed the check before it " + x
+          : "new check before it " + x + ", on " + calls(c.newChecks()));
+    }
+    if (c.what()) {
+      if (c.newCalls().isEmpty() && c.goneCalls().isEmpty()) parts.add(x + " with different data");
+      else {
+        String s = x + (c.newCalls().isEmpty() ? "" : " now using " + calls(c.newCalls()));
+        if (!c.goneCalls().isEmpty()) s += (c.newCalls().isEmpty() ? " no longer using " : ", no longer ") + calls(c.goneCalls());
+        parts.add(s);
+      }
+    }
+    return String.join("; ", parts) + " (in " + shortName(m) + ")";
+  }
+
+  private static String targets(List<Effect> effects) {
+    return effects.stream().map(x -> x.target().replaceFirst("^out ", "")).collect(Collectors.joining(" and "));
+  }
+
+  private static String calls(Set<String> names) {
+    List<String> l = new ArrayList<>(names);
+    return l.size() <= 2 ? String.join(" and ", l) : String.join(", ", l.subList(0, 2)) + " and " + (l.size() - 2) + " more";
   }
 
   /** Each way in after the change to the one it was before: by name, or by the method it runs when its class moved. */
@@ -210,10 +294,6 @@ public final class Feed {
     return words.size() <= 3 ? String.join(", ", words) : String.join(", ", words.subList(0, 3)) + " and " + (words.size() - 3) + " more";
   }
 
-  private static String cap(String s) {
-    return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
-  }
-
   private static String first(Set<String> items, int n) {
     return items.stream().limit(n).collect(Collectors.joining(", ")) + (items.size() > n ? ", …" : "");
   }
@@ -227,8 +307,8 @@ public final class Feed {
     return lines.isEmpty();
   }
 
-  /** True when something other than changed code on an existing path: a reader must look. */
+  /** True when what a way in can do changed, not only how it does something it already did. */
   public boolean structural() {
-    return lines.stream().anyMatch(l -> l.kind() != Kind.CHANGED_PATH);
+    return lines.stream().anyMatch(l -> l.kind().compareTo(Kind.CHANGED_DELETE) < 0);
   }
 }

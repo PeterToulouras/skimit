@@ -68,6 +68,7 @@ public final class Behaviour {
     this.analysis = analysis;
     CallGraph g = analysis.graph;
     moduleClosure();
+    findClients();
     Map<Node, Effect> effectAt = new HashMap<>();
     for (Set<Node> callees : new ArrayList<>(g.callees.values())) {
       for (Node n : callees) {
@@ -139,6 +140,7 @@ public final class Behaviour {
       Node n = work.poll();
       seen.add(n.method());
       Effect e = effectAt.get(n);
+      if (e == null && remote(n, modules)) e = new Effect("calls", simple(n.method().owner()) + " (remote)");
       if (e != null) {
         if (!found.containsKey(e)) {
           List<MethodKey> chain = new ArrayList<>();
@@ -147,8 +149,16 @@ public final class Behaviour {
         }
         continue;
       }
+      // At a call through a generated client, the implementations of its interface are what the
+      // other side runs, not this process.
+      Set<Node> elsewhere = new HashSet<>();
+      for (Set<Node> site : analysis.graph.sitesOf(n)) {
+        if (site.stream().anyMatch(t -> remote(t, modules))) {
+          site.stream().filter(t -> analysis.graph.hasBody(t.method())).forEach(elsewhere::add);
+        }
+      }
       for (Node next : analysis.graph.calleesOf(n)) {
-        if (from.containsKey(next)) continue;
+        if (from.containsKey(next) || elsewhere.contains(next)) continue;
         Integer module = analysis.graph.program.origin.get(next.method().owner());
         if (modules != null && module != null && !modules.contains(module)) continue;
         from.put(next, n);
@@ -240,6 +250,68 @@ public final class Behaviour {
       }
     }
     return null;
+  }
+
+  // ---- Generated clients ------------------------------------------------------------------------
+
+  /** Interfaces declared as clients of another service (Feign, HTTP exchange, Retrofit): remote wherever they are used. */
+  final Set<String> declaredClients = new HashSet<>();
+  /**
+   * Interfaces a library turns into a client at run time, with the builds where that happens. The
+   * same interface can be implemented for real by the service on the other side, where calls to
+   * it stay local.
+   */
+  final Map<String, Set<Integer>> builtClients = new HashMap<>();
+
+  /** Whether a call lands on a generated client, for a way in that runs in these builds. */
+  private boolean remote(Node n, Set<Integer> modules) {
+    String owner = n.method().owner();
+    if (n.method().name().startsWith("<") || analysis.graph.hasBody(n.method())) return false;
+    if (declaredClients.contains(owner)) return true;
+    Set<Integer> where = builtClients.get(owner);
+    return where != null && (modules == null || where.stream().anyMatch(modules::contains));
+  }
+
+  private static final Set<String> CLIENT_TYPE_ANNOTATIONS = Set.of(
+      "Lorg/springframework/cloud/openfeign/FeignClient;", "Lorg/springframework/cloud/netflix/feign/FeignClient;",
+      "Lorg/springframework/web/service/annotation/HttpExchange;",
+      "Lorg/eclipse/microprofile/rest/client/inject/RegisterRestClient;");
+  private static final Pattern CLIENT_METHOD_ANNOTATION = Pattern.compile(
+      "Lretrofit2/http/[A-Z]+;|Lorg/springframework/web/service/annotation/\\w+Exchange;");
+  /** Library calls that take an interface's class and return an object that implements it remotely. */
+  private static final Pattern CLIENT_FACTORY = Pattern.compile("(?i)proxy|target|create\\w*|refer\\w*|setInterface|\\w*client");
+
+  private void findClients() {
+    Map<String, ClassNode> classes = analysis.graph.program.classes;
+    for (ClassNode cn : classes.values()) {
+      if ((cn.access & Opcodes.ACC_INTERFACE) == 0) continue;
+      boolean annotated = cn.visibleAnnotations != null
+          && cn.visibleAnnotations.stream().anyMatch(an -> CLIENT_TYPE_ANNOTATIONS.contains(an.desc));
+      for (MethodNode mn : cn.methods) {
+        annotated |= list(mn).stream().anyMatch(an -> CLIENT_METHOD_ANNOTATION.matcher(an.desc).matches());
+      }
+      if (annotated) declaredClients.add(cn.name);
+    }
+    // Retrofit's create(X.class), Feign's target(X.class, url), a proxy(X.class) of one's own
+    // library: an interface's class handed to a library whose result is used as that interface.
+    for (ClassNode cn : classes.values()) {
+      for (MethodNode mn : cn.methods) {
+        Set<String> handed = new HashSet<>();
+        boolean viaFactory = false;
+        for (org.objectweb.asm.tree.AbstractInsnNode insn : mn.instructions) {
+          if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof Type t && t.getSort() == Type.OBJECT) {
+            ClassNode target = classes.get(t.getInternalName());
+            if (target != null && (target.access & Opcodes.ACC_INTERFACE) != 0) handed.add(t.getInternalName());
+          } else if (insn instanceof org.objectweb.asm.tree.MethodInsnNode mi && !classes.containsKey(mi.owner)
+              && !handed.isEmpty() && CLIENT_FACTORY.matcher(mi.name).matches()) {
+            viaFactory = true;
+          } else if (insn instanceof org.objectweb.asm.tree.TypeInsnNode ti && ti.getOpcode() == Opcodes.CHECKCAST
+              && viaFactory && handed.contains(ti.desc)) {
+            builtClients.computeIfAbsent(ti.desc, k -> new HashSet<>()).add(analysis.graph.program.origin.getOrDefault(cn.name, 0));
+          }
+        }
+      }
+    }
   }
 
   /** The data a store holds, by the name of its repository, mapper or DAO: OwnerRepository is Owner. */
