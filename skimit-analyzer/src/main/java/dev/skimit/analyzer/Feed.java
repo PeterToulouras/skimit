@@ -120,7 +120,8 @@ public final class Feed {
     for (Map.Entry<MethodKey, Set<String>> e : onPaths.entrySet()) {
       MethodKey m = e.getKey();
       MethodKey was = earlier.getOrDefault(m, m);
-      MethodNode old = base.analysis.graph.methods.get(was);
+      if (!base.analysis.graph.methods.containsKey(was)) was = sameName(base, diff.renames.back(m));
+      MethodNode old = was == null ? null : base.analysis.graph.methods.get(was);
       MethodNode now = head.analysis.graph.methods.get(m);
       Map<Effect, Set<String>> byEffect = new TreeMap<>();
       for (String pair : e.getValue()) {
@@ -150,6 +151,17 @@ public final class Feed {
       lines.add(new Line(deletesByText.getOrDefault(e.getKey(), false) ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + e.getKey()));
     }
     lines.sort(Comparator.comparing(Line::kind).thenComparing(Line::text));
+  }
+
+  /** The one method of the class with this name before the change, when its signature changed (a new return type). */
+  private static MethodKey sameName(Behaviour base, MethodKey m) {
+    MethodKey found = null;
+    for (MethodKey k : base.analysis.graph.methods.keySet()) {
+      if (!k.owner().equals(m.owner()) || !k.name().equals(m.name())) continue;
+      if (found != null) return null;
+      found = k;
+    }
+    return found;
   }
 
   /** Methods longer than this are not sliced; a change in one is reported without detail. */
