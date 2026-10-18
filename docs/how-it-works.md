@@ -100,18 +100,26 @@ bytecode:
 - the **check slice**: the branches with a call toward the effect down one side only, and what
   they test.
 
-Each slice is compared as normalised text, with locals renumbered and lambda numbers dropped. If
-neither changed, the change made no difference to that effect and there is no line. If one did,
-the line says which, and names the calls that are new or gone: "new check before it writes Pet,
-on ClinicService.findOwnerById", "no longer checks Permissions.canRefund before it writes ...",
-"writes Order now using Ids.next". A changed method that does not itself lead to the effect, but
-whose result goes into the data or the check of a method that does, is a line too: "writes MONEY
-via Ledger with different data (in PriceCalculator.total)". Methods longer than 4,000
-instructions are not sliced: a change in one, or in a method one of them calls on the way to an
-effect, is reported without detail.
+Each slice is compared as normalised text, with locals renumbered, lambda numbers dropped and
+classes known by their simple names, so a class that only moved package (`javax` to `jakarta`)
+is not a change. If neither slice changed, the change made no difference to that effect and there
+is no line. If one did, the line says which, and what changed in it as far as the bytecode can
+say: the calls that are new or gone ("new check before it writes Pet, on
+ClinicService.findOwnerById", "no longer checks Permissions.canRefund before it writes ...",
+"writes Order now using Ids.next"), the values ("changed the check before it writes Order: 100 →
+1000", "on OrderRepository.count against 100"), and when nothing named changed, the kind of logic
+that did ("a comparison changed", "a calculation changed").
+
+A changed method that does not itself lead to the effect, but whose result goes into the data or
+the check of a method that does, is a line too, and says what changed in it: the calls and fields
+it uses, what its branches test and the values it uses, leaving out logging and the exceptions it
+throws ("writes MONEY via Ledger with different data (in PriceCalculator.total: now checks
+Order.quantity against 10; now uses 90 and 100)"). Methods longer than 4,000 instructions are not
+sliced: a change in one, or in a method one of them calls on the way to an effect, is reported
+without detail.
 
 Lines with the same words are merged across ways in and across methods, so thirty helpers behind
-one write that changed alike are one line.
+one write that changed alike are one line; when a few changed in different ways, each says how.
 
 **Rules.** The never and only rules are checked on the map before and after the change, and a
 breach that is new is a line; a review rule flags a way in that gains a matching effect. See

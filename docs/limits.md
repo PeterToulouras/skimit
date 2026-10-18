@@ -17,10 +17,11 @@ bite on your code.
 - **Tables behind a raw client.** A repository, mapper or DAO is one store, named after it. A raw
   database client (JDBC, an `EntityManager`, a DynamoDB client) is one store per kind of client,
   so writes to different tables through the same client are one effect.
-- **How lines say where more often than what.** A line about how an effect is done names the
-  method that changed and, when it can, the calls that are new or gone. When the change is inside
-  an expression (a different number, a different field), the line says "with different data" or
-  "changed the check" and the code is a click away.
+- **Some lines about how say only where.** A line names the calls, values and fields that are new
+  or gone, or says that a comparison or a calculation changed. When none of those changed (a
+  different argument passed in the same call, a different local variable), it says "with different
+  data" or "changed the check" and the method, and the code is a click away. That was a third of the
+  lines about how in the [replay](evidence.md#what-real-commits-did).
 - **Dispatch the call graph cannot follow.** Reflection, method handles, `ServiceLoader`, and
   calls named in strings other than annotation expressions are not followed. An effect reached
   only that way is missing from the way in that causes it; `skimit verify` lists what a run did
@@ -46,7 +47,7 @@ bite on your code.
 
 ## Roadmap
 
-1. Say what changed in the data, not only where: the field or value that is new.
+1. Name the argument that changed when a call is the same but what it is given is not.
 2. Tell tables apart behind a raw database client, from the SQL or the request it is given.
 3. Ways in from gRPC, GraphQL, Quarkus and Micronaut.
 4. A map by area of the system, for codebases with hundreds of ways in.

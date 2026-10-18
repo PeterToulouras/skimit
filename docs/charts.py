@@ -14,18 +14,18 @@ THEMES = {
 
 # Commits by what skimit diff said: no change in behaviour, only how it does what it already did,
 # a change to what it can do. Every project with the built-in rule and no policy.
-# From experiments/2026-10/feed-0.2.0: python3 docs/charts.py after editing these.
+# From experiments/2026-10/feed-0.2.1: python3 docs/charts.py after editing these.
 REPLAY = [
-    ("XXL-JOB", "195 commits, 2024 to 2026", [110, 78, 7]),
-    ("Spring PetClinic", "84 commits, 2019 to 2026", [68, 14, 2]),
-    ("PetClinic REST", "78 commits, 2018 to 2026", [44, 28, 6]),
-    ("Apollo", "68 commits, 2024 to 2026", [26, 28, 14]),
+    ("XXL-JOB", "195 commits, 2024 to 2026", [111, 77, 7]),
+    ("Spring PetClinic", "84 commits, 2019 to 2026", [69, 13, 2]),
+    ("PetClinic REST", "78 commits, 2018 to 2026", [46, 26, 6]),
+    ("Apollo", "68 commits, 2024 to 2026", [27, 27, 14]),
     ("litemall", "45 commits, 2020 to 2025", [26, 13, 6]),
     ("newbee-mall", "37 commits, 2019 to 2025", [24, 12, 1]),
     ("Spring Framework PetClinic", "26 commits, 2015 to 2026", [25, 1, 0]),
     ("JPetStore", "22 commits, 2020 to 2026", [20, 1, 1]),
     ("vhr", "20 commits, 2019 to 2020", [12, 3, 5]),
-    ("All nine projects", "575 commits", [355, 178, 42]),
+    ("All nine projects", "575 commits", [360, 173, 42]),
 ]
 
 

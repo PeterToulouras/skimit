@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.1
+
+Lines about how an effect is done now say what changed, not only where.
+
+- **Values.** "changed the check before it writes Order (in Limits.allowed: 100 → 1000)", "new
+  check before it writes Order, on OrderRepository.count against 100".
+- **Helpers say what changed in them.** A changed method whose result goes into an effect names
+  what it now checks and uses: "writes MONEY via Ledger with different data (in
+  PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)",
+  "(in SpringSecurityUserInfoHolder.getUser: userService → userServiceSupplier)". Logging and the
+  exceptions a method throws are left out.
+- **The kind of logic, when nothing named changed**: "a comparison changed", "a calculation
+  changed".
+- **Moving packages is not a change.** A class is known by its simple name when slices are
+  compared, so a library or helper that only moved package (`javax` to `jakarta`, a dependency
+  that reorganised) says nothing.
+- **Shorter lines.** A check and the data that both changed, with nothing more to say, name the
+  effects once ("with a changed check and different data"); helpers that changed the same way are
+  named together; a line shows one way in as an example when two would be long.
+
+Over the same 575 commits, 33% of the lines about how say only where, down from 60%, and 5
+commits that only moved packages or swapped annotations now say "No change in behaviour." The
+same 42 commits change what the system can do. The data is in `experiments/2026-10/feed-0.2.1`.
+
 ## 0.2.0
 
 skimit now says what a change did to what the program does, instead of which methods to read.

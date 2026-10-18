@@ -2,12 +2,12 @@
 
 Two sets of results on the same commits and test suites.
 
-**skimit 0.2.0**, what each change did to behaviour, reported in
+**skimit 0.2**, what each change did to behaviour, reported in
 [docs/evidence.md](../../docs/evidence.md):
 
 | File | What it is |
 |---|---|
-| `feed-0.2.0/<project>.jsonl` | One line per commit tried: the headline, the counts, and every line `skimit diff` printed, or why it was skipped |
+| `feed-0.2.1/<project>.jsonl` | One line per commit tried: the headline, the counts, and every line `skimit diff` printed, or why it was skipped |
 | `verify-0.2.0/<project>.txt` | Output of `skimit verify` on each project's test suite |
 
 **skimit 0.1**, which sorted changed methods into review buckets, written up in

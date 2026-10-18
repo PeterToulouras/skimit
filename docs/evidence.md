@@ -19,43 +19,44 @@ its parent, and runs `skimit diff` between the two. 758 commits were tried; 183 
 
 | Project | Commits | No change in behaviour | Only how it does it | What it can do |
 |---|---:|---:|---:|---:|
-| XXL-JOB | 195 | 110 | 78 | 7 |
-| Spring PetClinic | 84 | 68 | 14 | 2 |
-| PetClinic REST | 78 | 44 | 28 | 6 |
-| Apollo | 68 | 26 | 28 | 14 |
+| XXL-JOB | 195 | 111 | 77 | 7 |
+| Spring PetClinic | 84 | 69 | 13 | 2 |
+| PetClinic REST | 78 | 46 | 26 | 6 |
+| Apollo | 68 | 27 | 27 | 14 |
 | litemall | 45 | 26 | 13 | 6 |
 | newbee-mall | 37 | 24 | 12 | 1 |
 | Spring Framework PetClinic | 26 | 25 | 1 | 0 |
 | JPetStore | 22 | 20 | 1 | 1 |
 | vhr | 20 | 12 | 3 | 5 |
-| **Total** | **575** | **355 (62%)** | **178 (31%)** | **42 (7%)** |
+| **Total** | **575** | **360 (63%)** | **173 (30%)** | **42 (7%)** |
 
-- **62% of commits changed nothing a way in does.** Refactoring, renames, moved classes, logging,
+- **63% of commits changed nothing a way in does.** Refactoring, renames, moved classes, logging,
   error messages, read-only endpoints, configuration. skimit says "No change in behaviour." and
   nothing else.
 - **7% changed what the system can do**: a route that gained or lost a write or a delete, a new or
   removed endpoint, a renamed one. These are the commits a person most needs to hear about, and
   they are one line each: `Removed: POST /api/pets (it writes Pet)`.
-- **31% changed only how it does what it already did**, such as a new check before a write or
+- **30% changed only how it does what it already did**, such as a new check before a write or
   different data going into one: `POST /api/owners/{ownerId}/pets: new check before it writes Pet,
   on ClinicService.findOwnerById; writes Pet now using ClinicService.findOwnerById, no longer new
   Owner`.
-- **It fits on a screen.** Of the 220 commits that had something to say, the median said 2 lines
-  and 178 (81%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move to a new
-  Spring Boot baseline, said 143, broadest first.
+- **It fits on a screen.** Of the 215 commits that had something to say, the median said 2 lines
+  and 178 (83%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move to a new
+  Spring Boot baseline, said 140, broadest first.
 - **Bug fixes.** 157 of the commits say they fix something. 64 of them changed behaviour by
   skimit's account (62 how, 2 what). The other 93 changed nothing a way in does: error messages,
   display, logging, configuration, read paths, typos. A fix in a read path is a real fix with no
   effect to report, since reads are not effects.
 
-Of the lines about how, 40% name the calls that are new or gone ("now using
-ClinicService.findOwnerById"). The other 60% say where the change is and what kind it is ("with
-different data (in PriceCalculator.total)", "changed the check before it deletes Owner"), with
-the code a click away. Saying what changed in the data, not only where, is the first item on the
-[roadmap](limits.md#roadmap).
+Of the 1,211 lines about how, 64% name what changed: the calls, fields and values that are new or
+gone ("changed the check before it deletes XxlJobLog (in XxlJobAdminConfig.getLogretentiondays: 7 →
+3)"). 3% say only the kind of logic that changed ("a comparison changed"). The other 33% say only
+where ("writes XxlJobUser with different data (in JobUserController.update)"), with the code a
+click away; under 0.2.0 that was 60%. Naming the argument that changed, when the call itself did
+not, is the first item on the [roadmap](limits.md#roadmap).
 
 The same commits under skimit 0.1 put 39% in "must review" and asked for a careful read of 225
-commits; 0.2.0 reports a change to what the system can do in 42.
+commits; 0.2 reports a change to what the system can do in 42.
 
 ## Against real runs
 
@@ -97,7 +98,7 @@ java -jar skimit-analyzer/target/skimit.jar verify target/classes target/test-cl
 ```
 
 The per-commit results, with every line skimit printed, are in
-[experiments/2026-10/feed-0.2.0](../experiments/2026-10/feed-0.2.0); the runtime checks in
+[experiments/2026-10/feed-0.2.1](../experiments/2026-10/feed-0.2.1); the runtime checks in
 [experiments/2026-10/verify-0.2.0](../experiments/2026-10/verify-0.2.0). The replay on your own
 history, with your own rules, is the number that matters.
 

@@ -49,7 +49,7 @@ prints:
 
 - **Breaks a rule (never "GET *" writes *): GET /reports/sales writes MONEY via Ledger**
 - GET /reports/sales now writes MONEY via Ledger (2 → 3 ways in)
-- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total)
+- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 - POST /refunds: no longer checks Permissions.canRefund before it writes MONEY via Ledger (in RefundHandler.refund)
 ```
 
@@ -119,10 +119,10 @@ see [docs/usage.md](docs/usage.md#in-ci). Workflows on `@v0` keep the 0.1 review
 
 Replayed over 575 real commits from nine open-source Java projects, with no configuration:
 
-- **62% changed nothing a way in does** (refactoring, renames, logging, read paths), and skimit
-  said so in one line. **7% changed what the system can do**, and **31% changed how it does what
+- **63% changed nothing a way in does** (refactoring, renames, logging, read paths), and skimit
+  said so in one line. **7% changed what the system can do**, and **30% changed how it does what
   it already did**.
-- **It fits on a screen**: the median commit with something to say needed 2 lines, and 81% needed
+- **It fits on a screen**: the median commit with something to say needed 2 lines, and 83% needed
   no more than 7.
 - **Checked against six projects' test suites** (2,109 tests): no run did anything the map says
   it cannot.

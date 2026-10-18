@@ -44,7 +44,7 @@ java -jar skimit.jar diff --base base/target/classes --head head/target/classes
 
 - **Breaks a rule (never "GET *" writes *): GET /reports/sales writes MONEY via Ledger**
 - GET /reports/sales now writes MONEY via Ledger (2 → 3 ways in)
-- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total)
+- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 - POST /refunds: no longer checks Permissions.canRefund before it writes MONEY via Ledger (in RefundHandler.refund)
 ```
 
