@@ -129,22 +129,34 @@ public final class Feed {
         Effect x = after.keySet().stream().filter(f -> f.toString().equals(p[0])).findFirst().orElseThrow();
         byEffect.computeIfAbsent(x, k -> new TreeSet<>()).add(p[1]);
       }
+      // The same words for several effects reached through the same ways in become one line.
+      Map<List<Object>, List<Effect>> alike = new java.util.LinkedHashMap<>();
       for (Map.Entry<Effect, Set<String>> fx : byEffect.entrySet()) {
         Effect x = fx.getKey();
-        String text;
+        String template;
         if (old == null) {
-          text = shortName(m) + " is new on the way to: " + x;
+          template = shortName(m) + " is new on the way to: " + EFFECT;
         } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
-          text = x + ", through " + shortName(m) + ", which changed and is too long to compare";
+          template = EFFECT + ", through " + shortName(m) + ", which changed and is too long to compare";
         } else {
           PathChange.Change c = PathChange.compare(was.owner(), old, toward(base, x), m.owner(), now, toward(head, x));
           if (!c.any()) continue;
-          text = describe(x, c, m);
+          template = describe(c, m);
         }
-        waysByText.computeIfAbsent(text, k -> new TreeSet<>()).addAll(fx.getValue());
-        deletesByText.put(text, x.verb().equals("deletes"));
+        alike.computeIfAbsent(List.of(template, fx.getValue()), k -> new ArrayList<>()).add(x);
+      }
+      for (Map.Entry<List<Object>, List<Effect>> g : alike.entrySet()) {
+        List<Effect> xs = g.getValue();
+        String text = ((String) g.getKey().get(0)).replace(EFFECT, xs.stream().map(Effect::toString).collect(Collectors.joining(" and ")));
+        @SuppressWarnings("unchecked")
+        Set<String> ways = (Set<String>) g.getKey().get(1);
+        waysByText.computeIfAbsent(text, k -> new TreeSet<>()).addAll(ways);
+        deletesByText.put(text, xs.stream().anyMatch(x -> x.verb().equals("deletes")));
       }
     }
+    // A new method another line already names ("now using JobCompleter.complete") needs no line of its own.
+    waysByText.keySet().removeIf(t -> t.contains(" is new on the way to: ") && waysByText.keySet().stream()
+        .anyMatch(o -> o != t && !o.contains(" is new on the way to: ") && o.contains(t.substring(0, t.indexOf(" is new on the way to: ")))));
     for (Map.Entry<String, Set<String>> e : waysByText.entrySet()) {
       Set<String> ways = e.getValue();
       String who = ways.size() == 1 ? ways.iterator().next() : ways.size() + " ways in (" + first(ways, 2) + ")";
@@ -188,8 +200,12 @@ public final class Feed {
     };
   }
 
+  /** Stands for the effects a description is about, filled in once the lines for several effects are merged. */
+  private static final String EFFECT = "\u0001";
+
   /** "new check before it writes Pet, on ClinicService.findOwnerById; writes Pet now using …" with where it happens. */
-  private static String describe(Effect x, PathChange.Change c, MethodKey m) {
+  private static String describe(PathChange.Change c, MethodKey m) {
+    String x = EFFECT;
     List<String> parts = new ArrayList<>();
     if (c.reach()) parts.add("now reaches " + x + " here");
     if (c.when()) {
