@@ -23,7 +23,16 @@ final class Compiler {
     return new Analysis(Program.load(List.of(compile(sources))), policy);
   }
 
+  /** As {@link #analyze(String...)}, compiled for an older Java: "8". */
+  static Analysis analyzeFor(String release, String... sources) throws IOException {
+    return new Analysis(Program.load(List.of(compile(List.of("--release", release, "-Xlint:-options"), sources))), Policy.defaults());
+  }
+
   static Path compile(String... sources) throws IOException {
+    return compile(List.of(), sources);
+  }
+
+  static Path compile(List<String> extra, String... sources) throws IOException {
     Path out = Files.createTempDirectory("skimit-test");
     List<JavaFileObject> units = new ArrayList<>();
     for (String src : sources) {
@@ -36,7 +45,9 @@ final class Compiler {
       });
     }
     JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-    List<String> options = List.of("-d", out.toString(), "-cp", System.getProperty("java.class.path"));
+    // As Maven and Gradle compile by default: with local variable names.
+    List<String> options = new ArrayList<>(List.of("-g", "-d", out.toString(), "-cp", System.getProperty("java.class.path")));
+    options.addAll(extra);
     if (!javac.getTask(null, null, null, options, null, units).call()) {
       throw new IllegalStateException("test sources did not compile");
     }

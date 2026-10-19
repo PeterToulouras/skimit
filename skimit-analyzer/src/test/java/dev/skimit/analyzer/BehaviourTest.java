@@ -193,6 +193,157 @@ class BehaviourTest {
     assertTrue(f.isEmpty(), f.lines.toString());
   }
 
+  static final String TWO_ARGS = """
+      import org.springframework.web.bind.annotation.*;
+      public class OrderController {
+        OrderService service;
+        @PostMapping("/orders") public void place(long id, long parent, String by) { service.place(id, parent, by); }
+      }""";
+
+  static String twoArgs(String body) {
+    return "public class OrderService { OrderRepository repo; Store store; void place(long id, long parent, String by) { " + body + " } }";
+  }
+
+  @Test
+  void aCallGivenSomethingElseSaysWhat() throws IOException {
+    String store = "public class Store { OrderRepository repo; void put(long id) { repo.save(id); } void put(long id, String by) { repo.save(id); } }";
+    Feed more = feed(program(TWO_ARGS, twoArgs("store.put(id);"), store), program(TWO_ARGS, twoArgs("store.put(id, by);"), store));
+    assertEquals(List.of("POST /orders: writes Order with different data: Store.put now also given by (in OrderService.place)"),
+        more.lines.stream().map(Feed.Line::text).toList());
+    Feed other = feed(program(TWO_ARGS, twoArgs("repo.save(id);"), store), program(TWO_ARGS, twoArgs("repo.save(parent);"), store));
+    assertEquals(List.of("POST /orders: writes Order with different data: OrderRepository.save now given parent, not id (in OrderService.place)"),
+        other.lines.stream().map(Feed.Line::text).toList());
+    // An argument inserted among others of its type is the one named.
+    String three = "public class Store { OrderRepository repo; void put(long id, String by) { repo.save(id); } void put(long id, long parent, String by) { repo.save(id); } }";
+    Feed inserted = feed(program(TWO_ARGS, twoArgs("store.put(id, by);"), three), program(TWO_ARGS, twoArgs("store.put(id, parent, by);"), three));
+    assertEquals(List.of("POST /orders: writes Order with different data: Store.put now also given parent (in OrderService.place)"),
+        inserted.lines.stream().map(Feed.Line::text).toList());
+    // A call made again is not a call given something else.
+    Feed again = feed(program(TWO_ARGS, twoArgs("repo.save(id);"), store), program(TWO_ARGS, twoArgs("repo.save(parent); repo.save(id);"), store));
+    assertEquals(List.of("POST /orders: writes Order with different data: OrderRepository.save now called twice, not once (in OrderService.place)"),
+        again.lines.stream().map(Feed.Line::text).toList());
+    String returning = store.replace("void put(long id) { repo.save(id); }", "boolean put(long id) { repo.save(id); return true; }");
+    Feed returns = feed(program(TWO_ARGS, twoArgs("store.put(id);"), store), program(TWO_ARGS, twoArgs("store.put(id);"), returning));
+    assertEquals(List.of("POST /orders: writes Order with different data: Store.put now returns boolean, not void (in OrderService.place)"),
+        returns.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aCheckAndDataGivenTheSameNewArgumentSayItOnce() throws IOException {
+    String gate = "public class Gate { static long cap(long id) { return id; } static long cap(long id, String by) { return id; } }";
+    String store = "public class Store { }";
+    Feed f = feed(program(TWO_ARGS, twoArgs("long cap = Gate.cap(id); if (cap > 0) repo.save(cap);"), gate, store),
+        program(TWO_ARGS, twoArgs("long cap = Gate.cap(id, by); if (cap > 0) repo.save(cap);"), gate, store));
+    assertEquals(List.of("POST /orders: writes Order with a changed check and different data: Gate.cap now also given by (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aPrivateMethodMadeVisibleIsNotALine() throws IOException {
+    String hidden = "public class OrderService { OrderRepository repo; void place(long id) { repo.save(tag(id)); } private long tag(long id) { return id; } }";
+    Feed f = feed(program(hidden, CONTROLLER), program(hidden.replace("private long tag", "long tag"), CONTROLLER));
+    assertTrue(f.isEmpty(), f.lines.toString());
+  }
+
+  @Test
+  void aFlagTestedBeforeAWriteIsNamed() throws IOException {
+    String flagged = "public class OrderService { OrderRepository repo; boolean stopped; void place(long id) { if (stopped) return; repo.save(id); } }";
+    Feed f = feed(program(flagged, CONTROLLER), program(flagged.replace("if (stopped) return; ", ""), CONTROLLER));
+    assertEquals(List.of("POST /api/orders: no longer checks stopped before it writes Order (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aLibraryCallSwappedForAnotherIsNamedWhenNothingElseChanged() throws IOException {
+    String listed = "public class OrderService { OrderRepository repo; void place(long id) { java.util.List<Long> l = java.util.List.of(id); if (l.size() > 0) repo.save(id); } }";
+    Feed f = feed(program(listed, CONTROLLER), program(listed.replace("l.size() > 0", "!l.isEmpty()"), CONTROLLER));
+    assertEquals(List.of("POST /api/orders: changed the check before it writes Order: List.size → List.isEmpty (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void theMessageOfAnExceptionAHelperThrowsIsNotALine() throws IOException {
+    String ids = "public class Ids { static long next(long id) { if (id < 0) throw new IllegalArgumentException(\"bad id \" + id); return id + 1; } }";
+    String using = SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id));");
+    Feed f = feed(program(using, CONTROLLER, ids), program(using, CONTROLLER, ids.replace("bad id ", "negative id ")));
+    assertTrue(f.isEmpty(), f.lines.toString());
+  }
+
+  @Test
+  void aHelperThatMovedPackageAndChangedSaysWhatChanged() throws IOException {
+    String ids = "package util; public class Ids { public static long next(long id) { return id + 1; } public static long salt(long id) { return id * 3; } }";
+    String using = SERVICE.replace("repo.save(id);", "repo.save(util.Ids.next(id) + util.Ids.salt(id));");
+    Feed f = feed(program(using, CONTROLLER, ids), program(using.replace("util.Ids", "common.Ids"), CONTROLLER,
+        ids.replace("package util;", "package common;").replace("id + 1", "id + 2").replace("id * 3", "id * 4")));
+    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.next: 1 → 2; Ids.salt: 3 → 4)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aNewHelperItsCallerNamesHasNoLineOfItsOwn() throws IOException {
+    String ids = "public class Ids { static long next(long id) { return id + 1; } }";
+    Feed f = feed(program(SERVICE, CONTROLLER), program(SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id));"), CONTROLLER, ids));
+    assertEquals(List.of("POST /api/orders: writes Order now using Ids.next (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aWriteMadeADifferentNumberOfTimesSaysSo() throws IOException {
+    String twice = SERVICE.replace("repo.save(id);", "repo.save(id); repo.save(id);");
+    Feed f = feed(program(twice, CONTROLLER), program(SERVICE, CONTROLLER));
+    assertEquals(List.of("POST /api/orders: writes Order with different data: OrderRepository.save now called once, not twice (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void theSameStepsInAnotherOrderAreSaidToBeThat() throws IOException {
+    String item = "public class Item { void setName(String n) { } void setPrice(long p) { } }";
+    String items = "public class ItemRepository { public void save(Item i) { } }";
+    String service = "public class OrderService { ItemRepository items; void place(long id) { Item i = new Item(); i.setName(\"x\"); i.setPrice(id); items.save(i); } }";
+    Feed f = feed(program(service, CONTROLLER, item, items),
+        program(service.replace("i.setName(\"x\"); i.setPrice(id);", "i.setPrice(id); i.setName(\"x\");"), CONTROLLER, item, items));
+    assertEquals(List.of("POST /api/orders: writes Item with different data: the same steps in another order (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void stepsThatMovedUnderANewGuardAreNotSaidToBeReordered() throws IOException {
+    String item = "public class Item { void setName(String n) { } void setPrice(long p) { } }";
+    String items = "public class ItemRepository { public void save(Item i) { } }";
+    String service = "public class OrderService { ItemRepository items; void place(long id) { Item i = new Item(); i.setName(\"x\"); i.setPrice(id); items.save(i); } }";
+    Feed f = feed(program(service, CONTROLLER, item, items),
+        program(service.replace("i.setName(\"x\"); i.setPrice(id);", "i.setPrice(id); if (id > 0) i.setName(\"x\");"), CONTROLLER, item, items));
+    assertFalse(f.lines.stream().anyMatch(l -> l.text().contains("another order")), f.lines.toString());
+  }
+
+  @Test
+  void aMethodThatTakesSomethingElseSaysSoWhenNothingMoreChanged() throws IOException {
+    String boxed = SERVICE.replace("void place(long id)", "void place(Long id)");
+    Feed f = feed(program(SERVICE, CONTROLLER), program(boxed, CONTROLLER));
+    assertEquals(List.of(
+        "POST /api/orders: writes Order with different data (in OrderService.place: now takes a Long instead of a long)",
+        "POST /api/orders: writes Order with different data: OrderService.place now given a Long instead of a long (in OrderController.place)"),
+        f.lines.stream().map(Feed.Line::text).sorted().toList());
+  }
+
+  @Test
+  void codeCompiledForANewerJavaSaysNothingThatDidNotChange() throws IOException {
+    // Java 8 builds strings with StringBuilder and reaches an outer class's private fields through
+    // accessor methods; later versions do neither.
+    String msgs = """
+        public class Msgs {
+          private long base = 7;
+          static String tag(long id) { return "order " + id + " placed"; }
+          class Inner { long shifted(long id) { return id + base; } }
+          long shift(long id) { return new Inner().shifted(id); }
+        }""";
+    String using = "public class OrderService { OrderRepository repo; Msgs msgs; void place(long id) { repo.save(Msgs.tag(id).length() + msgs.shift(id)); } }";
+    Analysis a = Compiler.analyzeFor("8", program(using, CONTROLLER, msgs));
+    Analysis b = Compiler.analyze(program(using, CONTROLLER, msgs));
+    Feed f = new Feed(new Behaviour(a), new Behaviour(b), new Differ(a, b), List.of());
+    assertTrue(f.lines.stream().noneMatch(l -> l.text().contains("uses") || l.text().contains("using")), f.lines.toString());
+  }
+
   @Test
   void aChangeTheWriteDoesNotSeeIsNotALine() throws IOException {
     Feed f = feed(program(SERVICE, CONTROLLER),

@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -18,11 +19,13 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.LookupSwitchInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.Frame;
@@ -44,14 +47,27 @@ import org.objectweb.asm.util.TraceMethodVisitor;
 final class PathChange {
 
   /**
-   * The two slices of one version of a method: as comparable text, and as what they name (the calls
-   * they make) and the values they use (the constants in them, in program order).
+   * One part of one version of a method (what feeds an effect, what decides whether it happens, or
+   * all of it): as comparable text, and as what a reader would name. The calls, objects and fields
+   * it uses, its constants in program order, the kinds of logic in it, what each call it makes is
+   * given, the types of the fields it uses, and its means: the calls into the language's own
+   * library and the fields it reaches collaborators through, which say how it is written.
    */
-  record Slices(String data, String checks, Set<String> dataNames, Set<String> checkNames, List<String> dataValues,
-      List<String> checkValues, Ops dataOps, Ops checkOps, boolean reaches, Set<AbstractInsnNode> dataInsns,
-      Set<AbstractInsnNode> checkInsns) {
-    static final Slices NONE = new Slices("", "", Set.of(), Set.of(), List.of(), List.of(), Ops.NONE, Ops.NONE, false, Set.of(),
-        Set.of());
+  record Part(String text, Set<String> names, List<String> values, Ops ops, Map<String, Call> calls, Map<String, Integer> counts,
+      Map<String, String> fields, Set<String> means, boolean accessors) {
+    static final Part NONE = new Part("", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false);
+  }
+
+  /**
+   * A call as one version of a method makes it: the types it takes and returns, and for each
+   * argument what it is in words, where the bytecode says (a local's name, a constant, a field,
+   * another call), and how it is computed, as comparable text.
+   */
+  record Call(List<String> takes, String returns, List<String> given, List<String> code) {}
+
+  /** The two slices of one version of a method, and the instructions in each. */
+  record Slices(Part data, Part checks, boolean reaches, Set<AbstractInsnNode> dataInsns, Set<AbstractInsnNode> checkInsns) {
+    static final Slices NONE = new Slices(Part.NONE, Part.NONE, false, Set.of(), Set.of());
   }
 
   /** The comparisons and the arithmetic among some instructions, counted by kind. */
@@ -72,22 +88,171 @@ final class PathChange {
     }
   }
 
-  /** What one part of a method gained and lost: the calls it names and the values it uses. */
+  /**
+   * What one part of a method gained and lost: the names and values it uses, whether its
+   * comparisons or arithmetic changed, how the calls it still makes are given something different
+   * ("ClusterService.createCluster now also given operator") and the fields it still uses hold
+   * something else, its means, and whether it does the same steps in another order.
+   */
   record Delta(Set<String> newNames, Set<String> goneNames, List<String> newValues, List<String> goneValues,
-      boolean comparisons, boolean arithmetic) {
-    static Delta between(Set<String> namesBefore, Set<String> namesAfter, List<String> valuesBefore, List<String> valuesAfter,
-        Ops opsBefore, Ops opsAfter) {
-      Set<String> newNames = new TreeSet<>(namesAfter);
-      newNames.removeAll(namesBefore);
-      Set<String> goneNames = new TreeSet<>(namesBefore);
-      goneNames.removeAll(namesAfter);
-      List<String> newValues = new ArrayList<>(valuesAfter);
-      newValues.removeAll(valuesBefore);
-      List<String> goneValues = new ArrayList<>(valuesBefore);
-      goneValues.removeAll(valuesAfter);
-      return new Delta(newNames, goneNames, newValues, goneValues, !opsBefore.comparisons().equals(opsAfter.comparisons()),
-          !opsBefore.arithmetic().equals(opsAfter.arithmetic()));
+      boolean comparisons, boolean arithmetic, List<String> given, List<String> recounted, Set<String> newMeans, Set<String> goneMeans,
+      boolean reordered) {
+    static Delta between(Part before, Part after) {
+      return between(before, after, true);
     }
+
+    /** As {@link #between(Part, Part)}; {@code mayReorder} is false when the method as a whole does more than reorder its steps. */
+    static Delta between(Part before, Part after, boolean mayReorder) {
+      Set<String> newNames = added(before.names(), after.names());
+      Set<String> goneNames = added(after.names(), before.names());
+      // Code compiled for another Java reaches fields another way: the fields it reaches say nothing.
+      boolean recompiled = before.accessors() != after.accessors();
+      if (recompiled) {
+        newNames.removeAll(after.fields().keySet());
+        goneNames.removeAll(before.fields().keySet());
+      }
+      List<String> newValues = without(after.values(), before.values());
+      List<String> goneValues = without(before.values(), after.values());
+      // What a call is given is said only when the names and values that are new or gone do not say it already.
+      Set<String> said = new HashSet<>(newNames);
+      said.addAll(goneNames);
+      said.addAll(newValues);
+      said.addAll(goneValues);
+      List<String> given = new ArrayList<>();
+      for (Map.Entry<String, Call> e : new TreeMap<>(before.calls()).entrySet()) {
+        Call now = after.calls().get(e.getKey());
+        // A call made more than once, or more or fewer times than before, cannot be paired with itself.
+        boolean once = before.counts().getOrDefault(e.getKey(), 0) == 1 && after.counts().getOrDefault(e.getKey(), 0) == 1;
+        String s = now == null || !once ? null : reshaped(e.getValue(), now, said, "given");
+        if (s != null) given.add(e.getKey() + " " + s);
+      }
+      for (Map.Entry<String, String> e : new TreeMap<>(before.fields()).entrySet()) {
+        String now = after.fields().get(e.getKey());
+        if (now != null && !now.equals(e.getValue())) given.add(e.getKey() + " is now " + now + ", not " + e.getValue());
+      }
+      // A call made a different number of times: "RabbitTemplate.convertAndSend now called once, not twice".
+      List<String> recounted = new ArrayList<>();
+      for (Map.Entry<String, Integer> e : new TreeMap<>(before.counts()).entrySet()) {
+        Integer now = after.counts().get(e.getKey());
+        String verb = e.getKey().startsWith("new ") ? " now made " : " now called ";
+        if (now != null && !now.equals(e.getValue())) recounted.add(e.getKey() + verb + times(now) + ", not " + times(e.getValue()));
+      }
+      return new Delta(newNames, goneNames, newValues, goneValues,
+          !before.ops().comparisons().equals(after.ops().comparisons()), !before.ops().arithmetic().equals(after.ops().arithmetic()),
+          given, recounted, recompiled ? Set.of() : added(before.means(), after.means()),
+          recompiled ? Set.of() : added(after.means(), before.means()),
+          mayReorder && !before.text().equals(after.text()) && steps(before.text()).equals(steps(after.text())));
+    }
+
+    /** The steps of a part regardless of their order and of how its locals are numbered. */
+    static List<String> steps(String text) {
+      return text.lines().map(l -> l.replaceAll(" v\\d+$", " v")).sorted().toList();
+    }
+
+    private static String times(int n) {
+      return n == 1 ? "once" : n == 2 ? "twice" : n + " times";
+    }
+
+    private static Set<String> added(Set<String> before, Set<String> after) {
+      Set<String> out = new TreeSet<>(after);
+      out.removeAll(before);
+      return out;
+    }
+
+    private static List<String> without(List<String> a, List<String> b) {
+      List<String> out = new ArrayList<>(a);
+      out.removeAll(b);
+      return out;
+    }
+  }
+
+  /**
+   * How a call is given something different, in words: "now also given operator", "no longer
+   * given a Date", "now given owner, not pet", "now returns Response, not ReturnT". Null when what
+   * it is given is computed the same way, or when the bytecode cannot say what changed.
+   */
+  static String reshaped(Call was, Call now, Set<String> said, String verb) {
+    List<String> parts = new ArrayList<>();
+    if (was.takes().equals(now.takes())) {
+      List<String> to = new ArrayList<>();
+      List<String> from = new ArrayList<>();
+      for (int i = 0; i < now.takes().size(); i++) {
+        String a = was.given().get(i);
+        String b = now.given().get(i);
+        if (a == null || b == null || a.equals(b) || said.contains(a) || said.contains(b) || was.code().get(i).equals(now.code().get(i))) continue;
+        to.add(b);
+        from.add(a);
+      }
+      if (!to.isEmpty()) parts.add("now " + verb + " " + String.join(" and ", to) + ", not " + String.join(" and ", from));
+    } else {
+      // The arguments both versions have in common, in order, by type and by what they are; the rest
+      // were added or taken away.
+      List<String> before = new ArrayList<>();
+      List<String> after = new ArrayList<>();
+      for (int k = 0; k < was.takes().size(); k++) before.add(was.takes().get(k) + " " + was.given().get(k));
+      for (int k = 0; k < now.takes().size(); k++) after.add(now.takes().get(k) + " " + now.given().get(k));
+      int[][] lcs = new int[before.size() + 1][after.size() + 1];
+      for (int i = before.size() - 1; i >= 0; i--) {
+        for (int j = after.size() - 1; j >= 0; j--) {
+          lcs[i][j] = before.get(i).equals(after.get(j)) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+        }
+      }
+      List<String> added = new ArrayList<>();
+      List<String> gone = new ArrayList<>();
+      int i = 0;
+      int j = 0;
+      while (i < before.size() || j < after.size()) {
+        if (i < before.size() && j < after.size() && before.get(i).equals(after.get(j))) {
+          i++;
+          j++;
+        } else if (j < after.size() && (i == before.size() || lcs[i][j + 1] >= lcs[i + 1][j])) {
+          added.add(said(now, j++));
+        } else {
+          gone.add(said(was, i++));
+        }
+      }
+      if (added.equals(gone)) {
+        // The same thing passed as another type: say the types.
+        added.clear();
+        gone.clear();
+        for (int k = 0; k < now.takes().size(); k++) if (!was.takes().contains(now.takes().get(k))) added.add(article(now.takes().get(k)));
+        for (int k = 0; k < was.takes().size(); k++) if (!now.takes().contains(was.takes().get(k))) gone.add(article(was.takes().get(k)));
+      }
+      added.removeAll(said);
+      gone.removeAll(said);
+      if (gone.isEmpty() && !added.isEmpty()) parts.add("now also " + verb + " " + String.join(" and ", added));
+      else if (added.isEmpty() && !gone.isEmpty()) parts.add("no longer " + verb + " " + String.join(" and ", gone));
+      else if (!added.isEmpty()) parts.add("now " + verb + " " + String.join(" and ", added) + " instead of " + String.join(" and ", gone));
+    }
+    if (!was.returns().equals(now.returns())) parts.add("now returns " + now.returns() + ", not " + was.returns());
+    return parts.isEmpty() ? null : String.join(", and ", parts);
+  }
+
+  /** How a method's own signature changed: "now also takes a String", "now returns void, not Owner". Null when it did not. */
+  static String signature(String descBefore, String descAfter) {
+    Call was = ofDesc(descBefore);
+    Call now = ofDesc(descAfter);
+    return was.takes().equals(now.takes()) && was.returns().equals(now.returns()) ? null : reshaped(was, now, Set.of(), "takes");
+  }
+
+  private static Call ofDesc(String desc) {
+    List<String> takes = new ArrayList<>();
+    List<String> nothing = new ArrayList<>();
+    for (Type t : Type.getArgumentTypes(desc)) {
+      takes.add(typeName(t));
+      nothing.add(null);
+    }
+    return new Call(takes, typeName(Type.getReturnType(desc)), nothing, nothing);
+  }
+
+  /** An argument in words: what it is, or else its type. */
+  private static String said(Call c, int i) {
+    String g = c.given().get(i);
+    return g != null ? g : article(c.takes().get(i));
+  }
+
+  private static String article(String type) {
+    return ("AEIOUaeiou".indexOf(type.charAt(0)) >= 0 ? "an " : "a ") + type;
   }
 
   /** What changed for the effect: in the data going into it, in the checks before it, or in whether this method reaches it at all. */
@@ -97,62 +262,102 @@ final class PathChange {
     }
   }
 
-  static Change compare(String ownerBefore, MethodNode before, Predicate<AbstractInsnNode> towardBefore,
-      String ownerAfter, MethodNode after, Predicate<AbstractInsnNode> towardAfter) {
-    Slices a = slices(ownerBefore, before, towardBefore);
-    Slices b = slices(ownerAfter, after, towardAfter);
-    return new Change(a.reaches() && b.reaches() && !a.data().equals(b.data()),
-        a.reaches() && b.reaches() && !a.checks().equals(b.checks()), a.reaches() != b.reaches(),
-        Delta.between(a.dataNames(), b.dataNames(), a.dataValues(), b.dataValues(), a.dataOps(), b.dataOps()),
-        Delta.between(a.checkNames(), b.checkNames(), a.checkValues(), b.checkValues(), a.checkOps(), b.checkOps()));
+  static Change compare(String ownerBefore, MethodNode before, Map<Integer, String> localsBefore, Predicate<AbstractInsnNode> towardBefore,
+      String ownerAfter, MethodNode after, Map<Integer, String> localsAfter, Predicate<AbstractInsnNode> towardAfter) {
+    Slices a = slices(ownerBefore, before, localsBefore, towardBefore);
+    Slices b = slices(ownerAfter, after, localsAfter, towardAfter);
+    boolean both = a.reaches() && b.reaches();
+    // A slice can look reordered while the method around it changed what guards it: say so only
+    // when the whole method takes the same steps.
+    boolean reordered = before != null && after != null
+        && Delta.steps(text(before, Set.copyOf(java.util.Arrays.asList(before.instructions.toArray()))))
+            .equals(Delta.steps(text(after, Set.copyOf(java.util.Arrays.asList(after.instructions.toArray())))));
+    return new Change(both && !a.data().text().equals(b.data().text()), both && !a.checks().text().equals(b.checks().text()),
+        a.reaches() != b.reaches(), Delta.between(a.data(), b.data(), reordered), Delta.between(a.checks(), b.checks(), reordered));
   }
 
   /**
-   * A whole method as a reader of its result needs it: what it names and the values it uses, and
-   * which of them its branches test. Logging and the exceptions it throws are left out.
+   * A whole method as a reader of its result needs it: all of it, and the part its branches test.
+   * Logging and the exceptions it throws, with the messages they are built with, are left out.
    */
-  record Body(String text, Set<String> checkNames, List<String> checkValues, Ops checkOps, Set<String> names, List<String> values,
-      Ops ops) {
-    static final Body NONE = new Body("", Set.of(), List.of(), Ops.NONE, Set.of(), List.of(), Ops.NONE);
+  record Body(Part checks, Part all) {
+    static final Body NONE = new Body(Part.NONE, Part.NONE);
+
+    String text() {
+      return all.text();
+    }
   }
 
   private static final Pattern LOGGING = Pattern.compile("(?i).*(/log|logger|logging|/slf4j/|/log4j|PrintStream).*");
 
-  static Body body(String owner, MethodNode mn) {
+  static Body body(String owner, MethodNode mn, Map<Integer, String> locals) {
     if (mn == null || mn.instructions.size() == 0) return Body.NONE;
     Frame<Dep>[] frames;
+    Frame<SourceValue>[] sources;
     try {
       frames = new Analyzer<>(new Deps()).analyze(owner, mn);
+      sources = new Analyzer<>(new SourceInterpreter()).analyze(owner, mn);
     } catch (AnalyzerException e) {
       return Body.NONE;
     }
+    // What is set aside: logging and throwing, and what is done to the objects made only for them
+    // (an exception, the builder of a message).
+    Set<AbstractInsnNode> roots = new HashSet<>();
+    Set<AbstractInsnNode> thrown = new HashSet<>();
+    Set<AbstractInsnNode> builders = new HashSet<>();
+    for (boolean more = true; more; ) {
+      more = false;
+      for (AbstractInsnNode insn : mn.instructions) {
+        Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
+        if (f == null || roots.contains(insn)) continue;
+        Set<Object> on = receiver(insn, f);
+        boolean throwing = insn.getOpcode() == Opcodes.ATHROW || on.stream().anyMatch(thrown::contains);
+        boolean logging = insn instanceof MethodInsnNode m && LOGGING.matcher(m.owner).matches() || on.stream().anyMatch(builders::contains);
+        if (!throwing && !logging) continue;
+        roots.add(insn);
+        more = true;
+        for (Dep d : inputs(insn, f)) {
+          for (AbstractInsnNode n : d.deps) {
+            if (!(n instanceof TypeInsnNode t) || n.getOpcode() != Opcodes.NEW) continue;
+            if (throwing) thrown.add(n);
+            else if (t.desc.equals("java/lang/StringBuilder") || t.desc.equals("java/lang/StringBuffer")) builders.add(n);
+          }
+        }
+      }
+    }
+    // Set aside only what nothing else needs: a value that is logged and also returned stays. What
+    // the method does is what it decides, returns, stores, and calls for its own sake.
+    Set<AbstractInsnNode> used = new HashSet<>();
+    for (AbstractInsnNode insn : mn.instructions) {
+      Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
+      if (f != null) inputs(insn, f).forEach(d -> used.addAll(d.deps));
+    }
+    Set<AbstractInsnNode> aside = new HashSet<>(roots);
+    Set<AbstractInsnNode> needed = new HashSet<>();
     Set<AbstractInsnNode> all = new HashSet<>();
     Set<AbstractInsnNode> checks = new HashSet<>();
-    Set<AbstractInsnNode> aside = new HashSet<>();
     for (AbstractInsnNode insn : mn.instructions) {
       Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
       if (f == null) continue;
       all.add(insn);
-      boolean logs = insn instanceof MethodInsnNode m && LOGGING.matcher(m.owner).matches();
-      if (logs || insn.getOpcode() == Opcodes.ATHROW) {
-        aside.add(insn);
-        for (Dep d : inputs(insn, f)) aside.addAll(d.deps);
+      List<Dep> in = inputs(insn, f);
+      if (roots.contains(insn)) {
+        in.forEach(d -> aside.addAll(d.deps));
+      } else if (isBranch(insn) || in.size() > 0 && !(insn instanceof MethodInsnNode || insn instanceof InvokeDynamicInsnNode)
+          || (insn instanceof MethodInsnNode || insn instanceof InvokeDynamicInsnNode) && !used.contains(insn)) {
+        needed.add(insn);
+        in.forEach(d -> needed.addAll(d.deps));
       }
       if (isBranch(insn)) {
         checks.add(insn);
-        for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
+        for (Dep d : in) checks.addAll(d.deps);
       }
     }
+    aside.removeAll(needed);
     all.removeAll(aside);
     checks.removeAll(aside);
-    Set<String> named = new TreeSet<>(names(all));
     // The fields it reads say how it gets at things: userService, or userServiceSupplier.
-    for (AbstractInsnNode insn : all) {
-      if (insn instanceof FieldInsnNode f && insn.getOpcode() == Opcodes.GETFIELD && !core(f.owner)) {
-        named.add(f.owner.equals(owner) ? f.name : Behaviour.simple(f.owner) + "." + f.name);
-      }
-    }
-    return new Body(text(mn, all), names(checks), values(mn, checks), Ops.of(checks), named, values(mn, all), Ops.of(all));
+    return new Body(part(owner, mn, locals, checks, frames, sources, false), part(owner, mn, locals, all, frames, sources, true));
   }
 
   private static boolean isBranch(AbstractInsnNode insn) {
@@ -160,7 +365,8 @@ final class PathChange {
         || insn instanceof TableSwitchInsnNode || insn instanceof LookupSwitchInsnNode;
   }
 
-  static Slices slices(String owner, MethodNode mn, Predicate<AbstractInsnNode> toward) {
+  /** The slices of a method; {@code locals} are the names of its locals, by slot, where known. */
+  static Slices slices(String owner, MethodNode mn, Map<Integer, String> locals, Predicate<AbstractInsnNode> toward) {
     if (mn == null || mn.instructions.size() == 0) return Slices.NONE;
     Map<AbstractInsnNode, Set<AbstractInsnNode>> next = new HashMap<>();
     Analyzer<Dep> analyzer = new Analyzer<>(new Deps()) {
@@ -170,10 +376,13 @@ final class PathChange {
       }
     };
     Frame<Dep>[] frames;
+    Frame<SourceValue>[] sources;
     try {
       frames = analyzer.analyze(owner, mn);
+      sources = new Analyzer<>(new SourceInterpreter()).analyze(owner, mn);
     } catch (AnalyzerException e) {
-      return new Slices("?", "?", Set.of(), Set.of(), List.of(), List.of(), Ops.NONE, Ops.NONE, false, Set.of(), Set.of());
+      Part unknown = new Part("?", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false);
+      return new Slices(unknown, unknown, false, Set.of(), Set.of());
     }
     List<AbstractInsnNode> targets = new ArrayList<>();
     for (AbstractInsnNode insn : mn.instructions) {
@@ -215,8 +424,139 @@ final class PathChange {
       checks.add(insn);
       for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
     }
-    return new Slices(text(mn, data), text(mn, checks), names(data), names(checks), values(mn, data), values(mn, checks),
-        Ops.of(data), Ops.of(checks), true, data, checks);
+    return new Slices(part(owner, mn, locals, data, frames, sources, false), part(owner, mn, locals, checks, frames, sources, false),
+        true, data, checks);
+  }
+
+  /**
+   * A part of a method from its instructions. Fields are named when their value is used, as with
+   * a flag or a limit, or always when {@code allFields}: the fields a whole method reads say how
+   * it gets at things.
+   */
+  private static Part part(String owner, MethodNode mn, Map<Integer, String> locals, Set<AbstractInsnNode> insns,
+      Frame<Dep>[] frames, Frame<SourceValue>[] sources, boolean allFields) {
+    Set<String> names = new TreeSet<>();
+    Set<String> means = new TreeSet<>();
+    Map<String, Call> calls = new TreeMap<>();
+    Map<String, Integer> counts = new TreeMap<>();
+    Map<String, String> fields = new TreeMap<>();
+    Set<String> overloaded = new HashSet<>();
+    boolean accessors = false;
+    for (AbstractInsnNode insn : mn.instructions) {
+      if (!insns.contains(insn)) continue;
+      if (insn instanceof MethodInsnNode m && ACCESSOR.matcher(m.name).matches()) {
+        // How javac before Java 11 let a nested class reach its outer class's private members.
+        accessors = true;
+        continue;
+      }
+      if (insn instanceof MethodInsnNode m) {
+        String name = m.name.equals("<init>") ? "new " + Behaviour.simple(m.owner) : Behaviour.simple(m.owner) + "." + m.name;
+        if (core(m.owner)) {
+          if (!asWritten(m)) means.add(name);
+          continue;
+        }
+        if (!m.name.equals("<init>")) names.add(name);
+        counts.merge(name, 1, Integer::sum);
+        Call c = call(owner, mn, locals, m, frames, sources);
+        Call seen = calls.putIfAbsent(name, c);
+        if (seen != null && !(seen.takes().equals(c.takes()) && seen.returns().equals(c.returns()))) overloaded.add(name);
+      }
+      if (insn instanceof TypeInsnNode t && t.getOpcode() == Opcodes.NEW && !core(t.desc)) names.add("new " + Behaviour.simple(t.desc));
+      if (insn instanceof FieldInsnNode f && !core(f.owner)) {
+        String name = insn.getOpcode() == Opcodes.GETSTATIC || insn.getOpcode() == Opcodes.PUTSTATIC ? Behaviour.simple(f.owner) + "." + f.name
+            : field(owner, f);
+        fields.put(name, typeName(Type.getType(f.desc)));
+        if (insn.getOpcode() == Opcodes.GETSTATIC) names.add(name);
+        if (insn.getOpcode() == Opcodes.GETFIELD) (allFields || plainValue(Type.getType(f.desc)) ? names : means).add(name);
+      }
+    }
+    overloaded.forEach(calls::remove);
+    return new Part(text(mn, insns), names, values(mn, insns), Ops.of(insns), calls, counts, fields, means, accessors);
+  }
+
+  /** A field as a reader would name it: by itself in its own class, with its class elsewhere. */
+  private static String field(String owner, FieldInsnNode f) {
+    return f.owner.equals(owner) ? f.name : Behaviour.simple(f.owner) + "." + f.name;
+  }
+
+  /** A number, a flag, a string, or a boxed one: a value, not a collaborator. */
+  private static boolean plainValue(Type t) {
+    return t.getSort() != Type.OBJECT && t.getSort() != Type.ARRAY
+        || t.getInternalName().equals("java/lang/String") || BOXES.contains(t.getInternalName());
+  }
+
+  private static final Set<String> BOXES = Set.of("java/lang/Integer", "java/lang/Long", "java/lang/Short", "java/lang/Byte",
+      "java/lang/Character", "java/lang/Boolean", "java/lang/Float", "java/lang/Double");
+
+  /**
+   * Library calls that only say how the code is written: building strings, boxing and unboxing,
+   * and the null checks javac adds on its own.
+   */
+  private static boolean asWritten(MethodInsnNode m) {
+    if (m.owner.equals("java/lang/StringBuilder") || m.owner.equals("java/lang/StringBuffer") || m.owner.startsWith("java/lang/invoke/")) return true;
+    if (m.owner.equals("java/util/Objects") && m.name.equals("requireNonNull")) return true;
+    if (!BOXES.contains(m.owner)) return false;
+    Type[] args = Type.getArgumentTypes(m.desc);
+    return m.name.equals("valueOf") && args.length == 1 && args[0].getSort() != Type.OBJECT || m.name.endsWith("Value") && args.length == 0;
+  }
+
+  /** A call as this version makes it: its types, and what each argument is and how it is computed. */
+  private static Call call(String owner, MethodNode mn, Map<Integer, String> locals, MethodInsnNode m, Frame<Dep>[] frames,
+      Frame<SourceValue>[] sources) {
+    Type[] args = Type.getArgumentTypes(m.desc);
+    int at = mn.instructions.indexOf(m);
+    Frame<Dep> f = frames[at];
+    Frame<SourceValue> s = sources[at];
+    List<String> takes = new ArrayList<>();
+    List<String> given = new ArrayList<>();
+    List<String> code = new ArrayList<>();
+    for (int i = 0; i < args.length; i++) {
+      takes.add(typeName(args[i]));
+      int slot = f.getStackSize() - args.length + i;
+      given.add(slot < 0 ? null : said(owner, mn, locals, s.getStack(slot), sources));
+      code.add(slot < 0 ? "" : text(mn, f.getStack(slot).deps));
+    }
+    return new Call(takes, typeName(Type.getReturnType(m.desc)), given, code);
+  }
+
+  private static String typeName(Type t) {
+    return t.getSort() == Type.ARRAY ? typeName(t.getElementType()) + "[]".repeat(t.getDimensions())
+        : t.getSort() == Type.OBJECT ? Behaviour.simple(t.getInternalName()) : t.getClassName();
+  }
+
+  /**
+   * What a value is, in words, when one instruction made it and the bytecode says: a local's name,
+   * a constant, a field, the result of a call, a new object. Null otherwise.
+   */
+  private static String said(String owner, MethodNode mn, Map<Integer, String> locals, SourceValue v, Frame<SourceValue>[] sources) {
+    for (int depth = 0; depth < 8; depth++) {
+      if (v == null || v.insns.size() != 1) return null;
+      AbstractInsnNode insn = v.insns.iterator().next();
+      int op = insn.getOpcode();
+      if (op == Opcodes.DUP || op == Opcodes.CHECKCAST) {
+        // A copy, or the same object seen as another type: what it was copied from.
+        Frame<SourceValue> f = sources[mn.instructions.indexOf(insn)];
+        v = f == null || f.getStackSize() == 0 ? null : f.getStack(f.getStackSize() - 1);
+        continue;
+      }
+      if (insn instanceof VarInsnNode var) return locals.get(var.var);
+      if (op == Opcodes.ACONST_NULL) return "null";
+      String constant = value(insn);
+      if (constant != null) return constant;
+      if (insn instanceof FieldInsnNode fi && (op == Opcodes.GETFIELD || op == Opcodes.GETSTATIC)) {
+        return op == Opcodes.GETSTATIC ? Behaviour.simple(fi.owner) + "." + fi.name : field(owner, fi);
+      }
+      if (insn instanceof MethodInsnNode mi && asWritten(mi) && Type.getArgumentTypes(mi.desc).length <= 1) {
+        // Boxed or unboxed, it is still what it was.
+        Frame<SourceValue> f = sources[mn.instructions.indexOf(insn)];
+        v = f == null || f.getStackSize() == 0 ? null : f.getStack(f.getStackSize() - 1);
+        continue;
+      }
+      if (insn instanceof MethodInsnNode mi) return mi.name.equals("<init>") ? null : Behaviour.simple(mi.owner) + "." + mi.name;
+      if (insn instanceof TypeInsnNode t && op == Opcodes.NEW) return "new " + Behaviour.simple(t.desc);
+      return null;
+    }
+    return null;
   }
 
   private static boolean reaches(AbstractInsnNode from, List<AbstractInsnNode> targets,
@@ -230,6 +570,13 @@ final class PathChange {
       work.addAll(next.getOrDefault(n, Set.of()));
     }
     return false;
+  }
+
+  /** The objects a call is made on: none for a static call or anything else. */
+  private static Set<Object> receiver(AbstractInsnNode insn, Frame<Dep> f) {
+    if (!(insn instanceof MethodInsnNode m) || m.getOpcode() == Opcodes.INVOKESTATIC) return Set.of();
+    int at = f.getStackSize() - Type.getArgumentTypes(m.desc).length - 1;
+    return at < 0 ? Set.of() : f.getStack(at).origins;
   }
 
   /** The values an instruction takes from the stack. */
@@ -247,6 +594,13 @@ final class PathChange {
       };
       case AbstractInsnNode.TABLESWITCH_INSN, AbstractInsnNode.LOOKUPSWITCH_INSN -> 1;
       case AbstractInsnNode.FIELD_INSN -> insn.getOpcode() == Opcodes.PUTFIELD ? 2 : insn.getOpcode() == Opcodes.PUTSTATIC ? 1 : 0;
+      case AbstractInsnNode.INSN -> switch (insn.getOpcode()) {
+        case Opcodes.ATHROW, Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN,
+            Opcodes.MONITORENTER, Opcodes.MONITOREXIT -> 1;
+        case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE, Opcodes.AASTORE, Opcodes.BASTORE,
+            Opcodes.CASTORE, Opcodes.SASTORE -> 3;
+        default -> 0;
+      };
       default -> 0;
     };
     List<Dep> out = new ArrayList<>();
@@ -257,8 +611,11 @@ final class PathChange {
   private static final Pattern LOCAL = Pattern.compile("(LOAD|STORE|IINC) (\\d+)");
   private static final Pattern LAMBDA = Pattern.compile("lambda\\$([\\w$]*?)\\$\\d+");
   private static final Pattern PACKAGE = Pattern.compile("(?:[a-z_][\\w$]*/)+(?=[A-Za-z_$])");
+  private static final Pattern INVOKE = Pattern.compile("^INVOKE(VIRTUAL|SPECIAL|INTERFACE)");
+  private static final Pattern ACCESSOR = Pattern.compile("access\\$\\d+");
+  private static final Pattern HANDLE = Pattern.compile("handle kind 0x[579] : INVOKE(VIRTUAL|SPECIAL|INTERFACE)");
 
-  /** The instructions in program order, with locals renumbered by first use, so that moving code around them does not count. */
+  /** The instructions in program order, with locals renumbered, so that moving code around them does not count. */
   private static String text(MethodNode mn, Set<AbstractInsnNode> keep) {
     StringBuilder sb = new StringBuilder();
     for (AbstractInsnNode insn : mn.instructions) {
@@ -267,34 +624,35 @@ final class PathChange {
       insn.accept(new TraceMethodVisitor(t));
       StringBuilder one = new StringBuilder();
       for (Object o : t.getText()) one.append(o);
-      sb.append(one.toString().strip()).append('\n');
+      // Calling a method of the class directly or through its type is the same call: a private
+      // method made visible to a proxy, or a class made an interface, has not changed what is asked.
+      sb.append(INVOKE.matcher(one.toString().strip()).replaceAll("INVOKE").replace(" (itf)", "")).append('\n');
+    }
+    // A parameter is known by its type and its place among the parameters of that type, so that
+    // passing one instead of another is seen and adding a parameter of another type changes
+    // nothing; other locals are numbered by first use.
+    Map<Integer, String> params = new HashMap<>();
+    int slot = 0;
+    if ((mn.access & Opcodes.ACC_STATIC) == 0) params.put(slot++, "this");
+    Map<String, Integer> ofType = new HashMap<>();
+    for (Type t : Type.getArgumentTypes(mn.desc)) {
+      String type = typeName(t);
+      params.put(slot, type + "#" + ofType.merge(type, 1, Integer::sum));
+      slot += t.getSize();
     }
     Map<String, Integer> locals = new HashMap<>();
     Matcher m = LOCAL.matcher(sb);
     StringBuilder out = new StringBuilder();
     while (m.find()) {
-      int n = locals.computeIfAbsent(m.group(2), k -> locals.size());
-      m.appendReplacement(out, m.group(1) + " v" + n);
+      String name = params.getOrDefault(Integer.parseInt(m.group(2)), null);
+      if (name == null) name = "v" + locals.computeIfAbsent(m.group(2), k -> locals.size());
+      m.appendReplacement(out, Matcher.quoteReplacement(m.group(1) + " " + name));
     }
     m.appendTail(out);
     // A class is known by its simple name: a library that moved a class to another package, or a
     // class of the program that moved, has not changed what the method does.
-    return PACKAGE.matcher(LAMBDA.matcher(out).replaceAll("lambda\\$$1\\$")).replaceAll("");
-  }
-
-  /**
-   * The methods a slice calls or builds, as people would name them: ClinicService.findOwnerById,
-   * new Owner. The language's own library is left out (boxing, string building, collection
-   * helpers): it says how the code is written, not what it asks of the system.
-   */
-  private static Set<String> names(Set<AbstractInsnNode> insns) {
-    Set<String> out = new TreeSet<>();
-    for (AbstractInsnNode insn : insns) {
-      if (insn instanceof MethodInsnNode m && !m.name.equals("<init>") && !core(m.owner)) out.add(Behaviour.simple(m.owner) + "." + m.name);
-      if (insn instanceof TypeInsnNode t && t.getOpcode() == Opcodes.NEW && !core(t.desc)) out.add("new " + Behaviour.simple(t.desc));
-      if (insn instanceof FieldInsnNode f && insn.getOpcode() == Opcodes.GETSTATIC && !core(f.owner)) out.add(Behaviour.simple(f.owner) + "." + f.name);
-    }
-    return out;
+    String plain = HANDLE.matcher(LAMBDA.matcher(out).replaceAll("lambda\\$$1\\$")).replaceAll("handle kind INVOKE");
+    return PACKAGE.matcher(plain).replaceAll("");
   }
 
   /**
@@ -308,6 +666,12 @@ final class PathChange {
       if (!keep.contains(insn)) continue;
       String v = value(insn);
       if (v != null) out.add(v);
+      // A string joined by invokedynamic keeps its constant pieces in a recipe, where code compiled
+      // for an older Java has them as constants of their own: "Order " + id + " failed".
+      if (insn instanceof InvokeDynamicInsnNode indy && indy.name.equals("makeConcatWithConstants") && indy.bsmArgs.length > 0
+          && indy.bsmArgs[0] instanceof String recipe) {
+        for (String piece : recipe.split("[\u0001\u0002]")) if (!piece.isEmpty()) out.add(value(new LdcInsnNode(piece)));
+      }
     }
     return new ArrayList<>(out);
   }

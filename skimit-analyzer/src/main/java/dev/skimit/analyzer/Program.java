@@ -26,6 +26,8 @@ public final class Program {
   public final Map<String, Integer> origin = new java.util.HashMap<>();
   /** The source lines each method's code was compiled from: its first and its last. */
   public final Map<MethodKey, int[]> lines = new java.util.HashMap<>();
+  /** The names the source gave each method's locals, by slot, where a slot holds one name throughout. */
+  public final Map<MethodKey, Map<Integer, String>> locals = new java.util.HashMap<>();
 
   public static Program load(List<Path> inputs) throws IOException {
     Program p = new Program();
@@ -69,7 +71,7 @@ public final class Program {
     classes.put(cn.name, cn);
     origin.put(cn.name, current);
     // It is read again only for where each method sits in its source, so a report can show the
-    // lines of the diff that belong to it.
+    // lines of the diff that belong to it, and for the names of its locals.
     reader.accept(new Locations(cn.name), ClassReader.SKIP_FRAMES);
   }
 
@@ -91,6 +93,14 @@ public final class Program {
       MethodKey key = new MethodKey(owner, name, desc);
       return new MethodVisitor(Opcodes.ASM9) {
         private final List<Integer> seen = new java.util.ArrayList<>();
+        private final Map<Integer, String> names = new java.util.HashMap<>();
+        private final java.util.Set<Integer> reused = new java.util.HashSet<>();
+
+        @Override
+        public void visitLocalVariable(String name, String descriptor, String signature, Label start, Label end, int index) {
+          String was = names.putIfAbsent(index, name);
+          if (was != null && !was.equals(name)) reused.add(index);
+        }
 
         @Override
         public void visitLineNumber(int line, Label start) {
@@ -99,6 +109,9 @@ public final class Program {
 
         @Override
         public void visitEnd() {
+          names.keySet().removeAll(reused);
+          names.values().remove("this");
+          if (!names.isEmpty()) locals.put(key, names);
           if (seen.isEmpty()) return;
           java.util.Collections.sort(seen);
           // Kotlin numbers the code it inlines from elsewhere past the end of the file; those

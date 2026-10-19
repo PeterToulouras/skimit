@@ -142,8 +142,7 @@ public final class Feed {
     for (Differ.Change c : diff.changes) if (c.was() != null) earlier.put(c.method(), c.was());
     for (Map.Entry<MethodKey, Set<String>> e : onPaths.entrySet()) {
       MethodKey m = e.getKey();
-      MethodKey was = earlier.getOrDefault(m, m);
-      if (!base.analysis.graph.methods.containsKey(was)) was = sameName(base, diff.renames.back(m));
+      MethodKey was = before(base, diff, earlier, m);
       MethodNode old = was == null ? null : base.analysis.graph.methods.get(was);
       MethodNode now = head.analysis.graph.methods.get(m);
       for (Map.Entry<Effect, Set<String>> fx : byEffect(e.getValue(), after).entrySet()) {
@@ -154,13 +153,18 @@ public final class Feed {
         } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
           template = EFFECT + ", through a method that changed and is too long to compare";
         } else {
-          PathChange.Change c = PathChange.compare(was.owner(), old, toward(base, x), m.owner(), now, toward(head, x));
+          PathChange.Change c = PathChange.compare(was.owner(), old, locals(base, was), toward(base, x), m.owner(), now,
+              locals(head, m), toward(head, x));
           if (!c.any()) continue;
           template = describe(c);
         }
         How h = how(hows, template, m);
         h.ways.addAll(fx.getValue());
         h.effects.add(x);
+        if (old == null) h.fresh.addAll(aka(head, m));
+        // Nothing more to say from the slices, but the method itself takes or returns something else.
+        String sig = old == null || !GENERIC.contains(template) ? null : PathChange.signature(was.desc(), m.desc());
+        if (sig != null) h.details.put(m, sig);
       }
     }
     // Each changed method off the way whose result goes into an effect, or decides whether it
@@ -169,13 +173,14 @@ public final class Feed {
     for (Map.Entry<MethodKey, Set<String>> e : offPaths.entrySet()) {
       MethodKey m = e.getKey();
       // What changed in it, said once whatever effects it touches: "now checks Order.quantity against 10".
-      MethodKey was = earlier.getOrDefault(m, m);
-      if (!base.analysis.graph.methods.containsKey(was)) was = sameName(base, diff.renames.back(m));
-      PathChange.Body then = was == null ? null : PathChange.body(was.owner(), base.analysis.graph.methods.get(was));
-      PathChange.Body now = PathChange.body(m.owner(), head.analysis.graph.methods.get(m));
+      MethodKey was = before(base, diff, earlier, m);
+      PathChange.Body then = was == null ? null : PathChange.body(was.owner(), base.analysis.graph.methods.get(was), locals(base, was));
+      PathChange.Body now = PathChange.body(m.owner(), head.analysis.graph.methods.get(m), locals(head, m));
       // Only the packages of the classes it uses changed (javax to jakarta): it does the same.
       if (then != null && then.text().equals(now.text())) continue;
-      String detail = then == null ? "" : bodyDetail(then, now);
+      String said = then == null ? "new" : bodyDetail(then, now);
+      // Nothing more to say from its body, but it takes or returns something else.
+      String detail = said.isEmpty() && PathChange.signature(was.desc(), m.desc()) != null ? PathChange.signature(was.desc(), m.desc()) : said;
       for (Map.Entry<Effect, Set<String>> fx : byEffect(e.getValue(), after).entrySet()) {
         Effect x = fx.getKey();
         Map<MethodKey, Set<String>> from = roles.computeIfAbsent(m + "\u0000" + x, k -> feeds(head, m, x));
@@ -197,6 +202,7 @@ public final class Feed {
           h.ways.addAll(ways);
           h.effects.add(x);
           h.details.put(m, detail);
+          if (then == null) h.fresh.addAll(aka(head, m));
         });
       }
     }
@@ -225,6 +231,8 @@ public final class Feed {
     final Set<Effect> effects = new TreeSet<>();
     /** For a method off the way, what changed in it, in words. */
     final Map<MethodKey, String> details = new HashMap<>();
+    /** When its method is new, the names a line that calls it would use: it needs no line of its own if one does. */
+    final Set<String> fresh = new HashSet<>();
 
     How(String template) {
       this.template = template;
@@ -242,6 +250,30 @@ public final class Feed {
     });
   }
 
+  /** Whether words name a method: "now using PermissionController.normalizeEnv", not "normalizeEnvironment". */
+  private static boolean mentions(String words, String name) {
+    int i = words.indexOf(name);
+    while (i >= 0) {
+      int end = i + name.length();
+      if ((i == 0 || !Character.isJavaIdentifierPart(words.charAt(i - 1)) && words.charAt(i - 1) != '.')
+          && (end == words.length() || !Character.isJavaIdentifierPart(words.charAt(end)))) return true;
+      i = words.indexOf(name, i + 1);
+    }
+    return false;
+  }
+
+  /** A method by the names a call to it can have: its class's, a subclass's that inherits it, or a type's it implements. */
+  private static Set<String> aka(Behaviour b, MethodKey m) {
+    Set<String> out = new TreeSet<>(Set.of(shortName(m)));
+    if (m.name().startsWith("<")) return out;
+    CallGraph g = b.analysis.graph;
+    for (String sub : g.subtypesOf(m.owner())) out.add(Behaviour.simple(sub) + "." + m.name());
+    for (String type : g.program.classes.keySet()) {
+      if (g.subtypesOf(type).contains(m.owner())) out.add(Behaviour.simple(type) + "." + m.name());
+    }
+    return out;
+  }
+
   /**
    * The lines about how, ready to show: a new method another line already names needs no line of
    * its own, and methods that changed alike, for the same ways in and effects, are one line, so a
@@ -250,8 +282,8 @@ public final class Feed {
    */
   private static List<Line> howLines(Map<String, How> hows) {
     List<How> all = new ArrayList<>(hows.values());
-    all.removeIf(h -> h.template.startsWith(NEW_ON_THE_WAY) && all.stream().anyMatch(o -> o != h
-        && !o.template.startsWith(NEW_ON_THE_WAY) && o.template.contains(shortName(h.methods.get(0)))));
+    all.removeIf(h -> !h.fresh.isEmpty() && all.stream().anyMatch(o -> o != h && o.fresh.isEmpty()
+        && h.fresh.stream().anyMatch(n -> mentions(o.template, n) || o.details.values().stream().anyMatch(d -> mentions(d, n)))));
     Map<List<Object>, How> merged = new java.util.LinkedHashMap<>();
     for (How h : all) {
       How m = merged.computeIfAbsent(List.of(h.template, h.ways, h.effects), k -> {
@@ -297,8 +329,7 @@ public final class Feed {
   static String bodyDetail(PathChange.Body before, PathChange.Body after) {
     List<String> parts = new ArrayList<>();
     Set<String> said = new HashSet<>();
-    PathChange.Delta checks = PathChange.Delta.between(before.checkNames(), after.checkNames(), before.checkValues(),
-        after.checkValues(), before.checkOps(), after.checkOps());
+    PathChange.Delta checks = PathChange.Delta.between(before.checks(), after.checks());
     if (!checks.newNames().isEmpty()) {
       parts.add("now checks " + list(checks.newNames()) + against(checks.newValues()));
       said.addAll(checks.newNames());
@@ -309,8 +340,7 @@ public final class Feed {
       said.addAll(checks.goneNames());
       said.addAll(checks.goneValues());
     }
-    PathChange.Delta uses = PathChange.Delta.between(before.names(), after.names(), before.values(), after.values(),
-        before.ops(), after.ops());
+    PathChange.Delta uses = PathChange.Delta.between(before.all(), after.all());
     List<String> newNames = uses.newNames().stream().filter(n -> !said.contains(n)).toList();
     List<String> goneNames = uses.goneNames().stream().filter(n -> !said.contains(n)).toList();
     List<String> newValues = uses.newValues().stream().filter(n -> !said.contains(n)).toList();
@@ -322,7 +352,10 @@ public final class Feed {
     }
     String v = values(newValues, goneValues, "uses ");
     if (!v.isEmpty()) parts.add(v);
-    // Nothing named or used changed: say what kind of logic did.
+    parts.addAll(uses.given());
+    // Nothing named or used changed: say what else did, or else what kind of logic.
+    if (parts.isEmpty()) parts.add(otherwise(uses));
+    parts.remove("");
     if (parts.isEmpty() && checks.comparisons()) parts.add("a comparison changed");
     if (parts.isEmpty() && uses.arithmetic()) parts.add("a calculation changed");
     return String.join("; ", parts);
@@ -396,7 +429,7 @@ public final class Feed {
           r.add("long");
           continue;
         }
-        PathChange.Slices s = sliced.computeIfAbsent(p.method(), k -> PathChange.slices(k.owner(), mn, toward(b, x)));
+        PathChange.Slices s = sliced.computeIfAbsent(p.method(), k -> PathChange.slices(k.owner(), mn, Map.of(), toward(b, x)));
         if (s.dataInsns().stream().anyMatch(i -> calls(g, i, q.method()))) r.add("data");
         if (s.checkInsns().stream().anyMatch(i -> calls(g, i, q.method()))) r.add("check");
       }
@@ -412,6 +445,26 @@ public final class Feed {
     return mi.owner.equals(m.owner()) || g.subtypesOf(mi.owner).contains(m.owner()) || g.subtypesOf(m.owner()).contains(mi.owner);
   }
 
+  /**
+   * The method a changed method was before the change: itself, what it was called before its
+   * class moved, the one method of its class with its name when its signature changed, or the
+   * one method with its name in a class of the same name that moved to another package. Null
+   * when it is new.
+   */
+  private static MethodKey before(Behaviour base, Differ diff, Map<MethodKey, MethodKey> earlier, MethodKey m) {
+    MethodKey was = earlier.getOrDefault(m, m);
+    if (base.analysis.graph.methods.containsKey(was)) return was;
+    was = sameName(base, diff.renames.back(m));
+    if (was != null) return was;
+    MethodKey found = null;
+    for (MethodKey k : base.analysis.graph.methods.keySet()) {
+      if (!k.name().equals(m.name()) || !Behaviour.simple(k.owner()).equals(Behaviour.simple(m.owner()))) continue;
+      if (found != null) return null;
+      found = k;
+    }
+    return found;
+  }
+
   /** The one method of the class with this name before the change, when its signature changed (a new return type). */
   private static MethodKey sameName(Behaviour base, MethodKey m) {
     MethodKey found = null;
@@ -421,6 +474,10 @@ public final class Feed {
       found = k;
     }
     return found;
+  }
+
+  private static Map<Integer, String> locals(Behaviour b, MethodKey m) {
+    return b.analysis.graph.program.locals.getOrDefault(m, Map.of());
   }
 
   /** Methods longer than this are not sliced; a change in one is reported without detail. */
@@ -450,6 +507,10 @@ public final class Feed {
   /** Stands for the effects a description is about, filled in once the lines for several effects are merged. */
   private static final String EFFECT = "\u0001";
 
+  /** The words of a line about how that says only where. */
+  private static final Set<String> GENERIC = Set.of("changed the check before it " + EFFECT, EFFECT + " with different data",
+      EFFECT + " with a changed check and different data");
+
   /** "new check before it writes Pet, on ClinicService.findOwnerById; writes Pet now using …". */
   private static String describe(PathChange.Change c) {
     String x = EFFECT;
@@ -460,18 +521,28 @@ public final class Feed {
       if (!d.goneNames().isEmpty()) parts.add("no longer checks " + list(d.goneNames()) + " before it " + x);
       if (!d.newNames().isEmpty()) parts.add("new check before it " + x + ", on " + list(d.newNames()) + against(d.newValues()));
       if (d.newNames().isEmpty() && d.goneNames().isEmpty()) {
+        List<String> said = new ArrayList<>();
         String v = values(d.newValues(), d.goneValues(), "against ");
-        if (v.isEmpty() && d.comparisons()) v = "a comparison changed";
-        parts.add("changed the check before it " + x + (v.isEmpty() ? "" : ": " + v));
+        if (!v.isEmpty()) said.add(v);
+        said.addAll(d.given());
+        if (said.isEmpty()) said.add(otherwise(d));
+        said.remove("");
+        if (said.isEmpty() && d.comparisons()) said.add("a comparison changed");
+        parts.add("changed the check before it " + x + (said.isEmpty() ? "" : ": " + String.join("; ", said)));
       }
     }
     if (c.what()) {
       PathChange.Delta d = c.data();
       boolean swap = !d.newValues().isEmpty() && d.newValues().size() == d.goneValues().size() && d.newValues().size() <= 3;
       if (d.newNames().isEmpty() && d.goneNames().isEmpty() && (swap || plain(d.newValues()).isEmpty() && plain(d.goneValues()).isEmpty())) {
+        List<String> said = new ArrayList<>();
         String v = values(d.newValues(), d.goneValues(), "");
-        if (v.isEmpty() && d.arithmetic()) v = "a calculation changed";
-        parts.add(x + " with different data" + (v.isEmpty() ? "" : ": " + v));
+        if (!v.isEmpty()) said.add(v);
+        said.addAll(d.given());
+        if (said.isEmpty()) said.add(otherwise(d));
+        said.remove("");
+        if (said.isEmpty() && d.arithmetic()) said.add("a calculation changed");
+        parts.add(x + " with different data" + (said.isEmpty() ? "" : ": " + String.join("; ", said)));
       } else {
         List<String> now = new ArrayList<>(d.newNames());
         now.addAll(plain(d.newValues()));
@@ -480,16 +551,37 @@ public final class Feed {
         String s = x + (now.isEmpty() ? "" : " now using " + list(now));
         if (!gone.isEmpty()) s += (now.isEmpty() ? " no longer using " : ", no longer ") + list(gone);
         parts.add(s);
+        parts.addAll(d.given());
       }
     }
-    // Both changed and neither can say more: one phrase, so the effects are named once.
-    int check = parts.indexOf("changed the check before it " + x);
-    int data = parts.indexOf(x + " with different data");
-    if (check >= 0 && data >= 0) {
-      parts.set(check, x + " with a changed check and different data");
+    // Both changed and say the same, or nothing more: one phrase, so the effects are named once.
+    String checkWords = "changed the check before it " + x;
+    String dataWords = x + " with different data";
+    for (int check = 0; check < parts.size(); check++) {
+      if (!parts.get(check).startsWith(checkWords)) continue;
+      String what = parts.get(check).substring(checkWords.length());
+      int data = parts.indexOf(dataWords + what);
+      if (data < 0) continue;
+      parts.set(check, x + " with a changed check and different data" + what);
       parts.remove(data);
+      break;
     }
     return String.join("; ", parts);
+  }
+
+  /**
+   * When nothing named, valued or given changed, what did: a call made a different number of
+   * times, the means ("List.size → List.isEmpty", "xxlJobInfoDao → xxlJobInfoMapper"), or the
+   * order of the same steps.
+   */
+  private static String otherwise(PathChange.Delta d) {
+    if (!d.recounted().isEmpty()) return String.join("; ", d.recounted());
+    if (d.newMeans().size() == 1 && d.goneMeans().size() == 1) return d.goneMeans().iterator().next() + " → " + d.newMeans().iterator().next();
+    List<String> parts = new ArrayList<>();
+    if (!d.newMeans().isEmpty()) parts.add("now uses " + list(d.newMeans()));
+    if (!d.goneMeans().isEmpty()) parts.add("no longer uses " + list(d.goneMeans()));
+    if (parts.isEmpty() && d.reordered()) parts.add("the same steps in another order");
+    return String.join(", ", parts);
   }
 
   private static String targets(List<Effect> effects) {
