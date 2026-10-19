@@ -19,16 +19,16 @@ its parent, and runs `skimit diff` between the two. 758 commits were tried; 183 
 
 | Project | Commits | No change in behaviour | Only how it does it | What it can do |
 |---|---:|---:|---:|---:|
-| XXL-JOB | 195 | 111 | 77 | 7 |
+| XXL-JOB | 195 | 113 | 75 | 7 |
 | Spring PetClinic | 84 | 69 | 13 | 2 |
 | PetClinic REST | 78 | 46 | 26 | 6 |
-| Apollo | 68 | 27 | 27 | 14 |
+| Apollo | 68 | 28 | 26 | 14 |
 | litemall | 45 | 26 | 13 | 6 |
 | newbee-mall | 37 | 24 | 12 | 1 |
 | Spring Framework PetClinic | 26 | 25 | 1 | 0 |
-| JPetStore | 22 | 20 | 1 | 1 |
+| JPetStore | 22 | 21 | 0 | 1 |
 | vhr | 20 | 12 | 3 | 5 |
-| **Total** | **575** | **360 (63%)** | **173 (30%)** | **42 (7%)** |
+| **Total** | **575** | **364 (63%)** | **169 (29%)** | **42 (7%)** |
 
 - **63% of commits changed nothing a way in does.** Refactoring, renames, moved classes, logging,
   error messages, read-only endpoints, configuration. skimit says "No change in behaviour." and
@@ -36,24 +36,27 @@ its parent, and runs `skimit diff` between the two. 758 commits were tried; 183 
 - **7% changed what the system can do**: a route that gained or lost a write or a delete, a new or
   removed endpoint, a renamed one. These are the commits a person most needs to hear about, and
   they are one line each: `Removed: POST /api/pets (it writes Pet)`.
-- **30% changed only how it does what it already did**, such as a new check before a write or
+- **29% changed only how it does what it already did**, such as a new check before a write or
   different data going into one: `POST /api/owners/{ownerId}/pets: new check before it writes Pet,
   on ClinicService.findOwnerById; writes Pet now using ClinicService.findOwnerById, no longer new
   Owner`.
-- **It fits on a screen.** Of the 215 commits that had something to say, the median said 2 lines
-  and 178 (83%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move to a new
-  Spring Boot baseline, said 140, broadest first.
+- **It fits on a screen.** Of the 211 commits that had something to say, the median said 2 lines
+  and 180 (85%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move of its
+  portal to a new version of its API, said 106, broadest first.
 - **Bug fixes.** 157 of the commits say they fix something. 64 of them changed behaviour by
   skimit's account (62 how, 2 what). The other 93 changed nothing a way in does: error messages,
   display, logging, configuration, read paths, typos. A fix in a read path is a real fix with no
   effect to report, since reads are not effects.
 
-Of the 1,211 lines about how, 64% name what changed: the calls, fields and values that are new or
-gone ("changed the check before it deletes XxlJobLog (in XxlJobAdminConfig.getLogretentiondays: 7 →
-3)"). 3% say only the kind of logic that changed ("a comparison changed"). The other 33% say only
-where ("writes XxlJobUser with different data (in JobUserController.update)"), with the code a
-click away; under 0.2.0 that was 60%. Naming the argument that changed, when the call itself did
-not, is the first item on the [roadmap](limits.md#roadmap).
+Of the 977 lines about how, 93% say what changed: the calls, fields and values that are new or gone
+("changed the check before it deletes XxlJobLog (in XxlJobAdminConfig.getLogretentiondays: 7 →
+3)"), what a call is given differently ("ClusterService.createCluster now also given operator"), or
+failing those what else did ("RabbitTemplate.convertAndSend now called once, not twice"). 1% say
+only the kind of logic that changed ("a comparison changed"). The other 6% say only where ("changed
+the check before it writes XxlJobInfo (in XxlJobServiceImpl.update)", where a validation moved
+under a new condition), with the code a click away. Two thirds of those come from the two commits
+that moved a project from Java 8 to 17, which changes the bytecode throughout without changing the
+code. Under 0.2.1 a third of the lines said only where; under 0.2.0, 60%.
 
 The same commits under skimit 0.1 put 39% in "must review" and asked for a careful read of 225
 commits; 0.2 reports a change to what the system can do in 42.
@@ -98,7 +101,7 @@ java -jar skimit-analyzer/target/skimit.jar verify target/classes target/test-cl
 ```
 
 The per-commit results, with every line skimit printed, are in
-[experiments/2026-10/feed-0.2.1](../experiments/2026-10/feed-0.2.1); the runtime checks in
+[experiments/2026-10/feed-0.2.2](../experiments/2026-10/feed-0.2.2); the runtime checks in
 [experiments/2026-10/verify-0.2.0](../experiments/2026-10/verify-0.2.0). The replay on your own
 history, with your own rules, is the number that matters.
 

@@ -120,9 +120,9 @@ see [docs/usage.md](docs/usage.md#in-ci). Workflows on `@v0` keep the 0.1 review
 Replayed over 575 real commits from nine open-source Java projects, with no configuration:
 
 - **63% changed nothing a way in does** (refactoring, renames, logging, read paths), and skimit
-  said so in one line. **7% changed what the system can do**, and **30% changed how it does what
+  said so in one line. **7% changed what the system can do**, and **29% changed how it does what
   it already did**.
-- **It fits on a screen**: the median commit with something to say needed 2 lines, and 83% needed
+- **It fits on a screen**: the median commit with something to say needed 2 lines, and 85% needed
   no more than 7.
 - **Checked against six projects' test suites** (2,109 tests): no run did anything the map says
   it cannot.

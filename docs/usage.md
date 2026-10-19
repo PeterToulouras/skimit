@@ -58,7 +58,7 @@ The first sentence is the answer. Then come the lines, in this order:
 | New way in, Removed | A route, job or listener that causes something appeared or went. |
 | is now | A way in answers to a new name and does the same things. |
 | no longer writes, calls, sends | A way in lost an effect. |
-| how | Same effects, done differently: a new or removed check before an effect, different data going into it, or a new call on the way to it, with the method where that happened. |
+| how | Same effects, done differently: a new or removed check before an effect, different data going into it, or a new call on the way to it, with the method where that happened and what changed there. |
 
 Seven lines are shown; the rest fold away. Code that nothing calls is not a way in, so a service
 written before its route says nothing until the route exists. A change that does none of these

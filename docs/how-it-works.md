@@ -100,23 +100,34 @@ bytecode:
 - the **check slice**: the branches with a call toward the effect down one side only, and what
   they test.
 
-Each slice is compared as normalised text, with locals renumbered, lambda numbers dropped and
-classes known by their simple names, so a class that only moved package (`javax` to `jakarta`)
-is not a change. If neither slice changed, the change made no difference to that effect and there
-is no line. If one did, the line says which, and what changed in it as far as the bytecode can
-say: the calls that are new or gone ("new check before it writes Pet, on
-ClinicService.findOwnerById", "no longer checks Permissions.canRefund before it writes ...",
-"writes Order now using Ids.next"), the values ("changed the check before it writes Order: 100 →
-1000", "on OrderRepository.count against 100"), and when nothing named changed, the kind of logic
-that did ("a comparison changed", "a calculation changed").
+Each slice is compared as normalised text: locals renumbered, a parameter known by its type and
+its place among the parameters of that type, lambda numbers dropped, classes known by their simple
+names, and a call to a method the same whether it is made directly or through its type. So a
+class that only moved package (`javax` to `jakarta`), a private method made visible to a proxy,
+or a new parameter of another type that the slice does not use is not a change. If neither slice
+changed, the change made no difference to that effect and there is no line. If one did, the line
+says which, and what changed in it as far as the bytecode can say:
+
+- the calls, fields and values that are new or gone: "new check before it writes Pet, on
+  ClinicService.findOwnerById", "no longer checks stopped before it writes Order", "changed the
+  check before it writes Order: 100 → 1000";
+- what a call that is still made is given differently, in the names the source gave its locals:
+  "ClusterService.createCluster now also given operator", "OrderRepository.save now given
+  parent, not id", "XxlJobRemotingUtil.postBody now returns Response, not ReturnT";
+- when none of those changed, what did: a call made a different number of times ("now called
+  once, not twice"), a library call or a field swapped for another ("List.size →
+  List.isEmpty"), the same steps in another order, the kind of logic ("a comparison changed",
+  "a calculation changed"), or what the method itself now takes or returns.
 
 A changed method that does not itself lead to the effect, but whose result goes into the data or
-the check of a method that does, is a line too, and says what changed in it: the calls and fields
-it uses, what its branches test and the values it uses, leaving out logging and the exceptions it
-throws ("writes MONEY via Ledger with different data (in PriceCalculator.total: now checks
-Order.quantity against 10; now uses 90 and 100)"). Methods longer than 4,000 instructions are not
-sliced: a change in one, or in a method one of them calls on the way to an effect, is reported
-without detail.
+the check of a method that does, is a line too, and says what changed in it in the same terms: the
+calls and fields it uses, what its branches test and the values it uses, leaving out logging and
+the exceptions it throws, with the messages they are built with ("writes MONEY via Ledger with
+different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and
+100)"). A class that moved package and changed too is compared with what it was. A helper that is
+new says so, and has no line of its own when the line about its caller names it. Methods longer
+than 4,000 instructions are not sliced: a change in one, or in a method one of them calls on the
+way to an effect, is reported without detail.
 
 Lines with the same words are merged across ways in and across methods, so thirty helpers behind
 one write that changed alike are one line; when a few changed in different ways, each says how.

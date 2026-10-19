@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.2
+
+Lines about how an effect is done now say what changed in nearly every case, and changes that do
+nothing stop producing lines.
+
+- **What a call is given.** A call that is still made but given something else says what, in the
+  names the source gave its locals: "ClusterService.createCluster now also given operator",
+  "OrderRepository.save now given parent, not id", "XxlJobRemotingUtil.postBody now returns
+  Response, not ReturnT".
+- **Flags and limits.** A field whose value is tested or used is named: "no longer checks stopped
+  before it writes Order".
+- **When nothing named changed, what did**: a call made a different number of times
+  ("RabbitTemplate.convertAndSend now called once, not twice"), a library call or a field swapped
+  for another ("List.size → List.isEmpty"), the same steps in another order, or what the method
+  itself now takes or returns.
+- **Fewer lines that say nothing.** A private method made visible to a proxy is not a change, nor
+  is the message of an exception a helper throws, and adding a parameter does not make the others
+  look different. A class that moved package and changed is compared with what it was, and a new
+  helper whose caller's line names it has no line of its own.
+
+Over the same 575 commits, 6% of the lines about how say only where, down from 33%, most of them
+in the two commits that moved a project from Java 8 to 17. Lines about how fall from 1,211 to 977,
+and 4 more commits, which only moved code or changed an exception's message, now say "No change in
+behaviour." The same 42 commits change what the system can do. The data is in
+`experiments/2026-10/feed-0.2.2`.
+
 ## 0.2.1
 
 Lines about how an effect is done now say what changed, not only where.
