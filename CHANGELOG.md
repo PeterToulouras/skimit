@@ -40,7 +40,9 @@ Found by reading 60 replayed commits against what skimit said about them (the ta
 - **A check that fails through a helper that always throws is still a check.** Moving from
   `return` to `Fail.now(...)` used to read as every check before the write being gone.
 - **A value put in a local first, or passed through a second one, is not a change**, and reading
-  a parameter, a field or a constant earlier or later is not another order of steps.
+  a parameter, a field or a constant earlier or later is not another order of steps, as long as
+  every call is still given the same expressions in the same places: swapping two arguments is
+  a change even when both are reads, as Apollo's permission-target fix was.
 - **Spring Data fragments are wired by name.** `SpringDataPetRepositoryImpl implements
   PetRepositoryOverride` is reached through the repository, as Spring Data would reach it.
 - **The headline says what it means.** "No change in behaviour." is now "No change to what any

@@ -119,7 +119,9 @@ Each slice is compared as normalised text: a parameter known by its type and its
 parameters of that type, other locals left out (a local is a name for a value, not a step), lambda
 numbers dropped, classes known by their simple names, a call to a method the same whether it is
 made directly or through its type, and reads of parameters, fields and constants allowed to sit
-in another order. So a class that only moved package (`javax` to `jakarta`), a private method made
+in another order as long as every call is still given the same expressions in the same places
+(swapping two arguments is a change, even when both are reads). So a class that only moved
+package (`javax` to `jakarta`), a private method made
 visible to a proxy, a value put in a local first, or a new parameter of another type that the
 slice does not use is not a change. If neither slice
 changed, the change made no difference to that effect and there is no line. If one did, the line

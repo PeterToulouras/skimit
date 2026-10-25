@@ -158,7 +158,7 @@ public final class Feed {
           // The walk stops at the effect, but what the effect's own code does can change too.
           PathChange.Body then = PathChange.body(was.owner(), old, locals(base, was));
           PathChange.Body here = PathChange.body(m.owner(), now, locals(head, m));
-          if (PathChange.sameSteps(then.text(), here.text())) continue;
+          if (PathChange.sameSteps(then.all(), here.all())) continue;
           template = "the code that " + EFFECT + " changed";
           detail = bodyDetail(then, here);
         } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
@@ -189,7 +189,7 @@ public final class Feed {
       PathChange.Body then = was == null ? null : PathChange.body(was.owner(), base.analysis.graph.methods.get(was), locals(base, was));
       PathChange.Body now = PathChange.body(m.owner(), head.analysis.graph.methods.get(m), locals(head, m));
       // Only the packages of the classes it uses changed (javax to jakarta): it does the same.
-      if (then != null && PathChange.sameSteps(then.text(), now.text())) continue;
+      if (then != null && PathChange.sameSteps(then.all(), now.all())) continue;
       String said = then == null ? "new" : bodyDetail(then, now);
       // Nothing more to say from its body, but it takes or returns something else.
       String detail = said.isEmpty() && PathChange.signature(was.desc(), m.desc()) != null ? PathChange.signature(was.desc(), m.desc()) : said;

@@ -119,6 +119,37 @@ and compares it with the shop as it was. The table is in
   the account, the reflection line gave no reason, and the method rename produced a line. The
   changes are in the [changelog](../CHANGELOG.md).
 
+## Read by hand
+
+The replay counts what skimit said; it cannot say whether it was right. Sixty of the 575 commits
+were drawn by a fixed shuffle, thirty that skimit 0.2.2 said nothing about and thirty it said only
+how an effect changed, and each was read against its diff. The table, with a note on every
+commit and what 0.2.3 says on the same one, is
+[experiments/2026-10/recall/labels.md](../experiments/2026-10/recall/labels.md).
+
+| Thirty commits that got… | right | wrong or missed | noise | out of scope |
+|---|---:|---:|---:|---:|
+| the "no change" sentence | 22 | 6 | 0 | 2 |
+| lines about how | 17 | 7 | 6 | 0 |
+
+- **Six silent commits had changed behaviour a reviewer would want.** Four were checks that guard
+  reads: a login interceptor extended to the order routes, an interceptor comparing a different
+  path, an access-key check in a filter, and a JPA relation made transient. One added a route
+  that calls out through a client library skimit does not know. One changed the text a job
+  writes to its log table through a builder. None is a write, delete, call or message that skimit
+  recognises, so 0.2.3 says what it means: "No change to what any way in writes, deletes, sends
+  or calls." The two out of scope were in a module the replay does not build.
+- **Seven lines were not true**, and each was a bug fixed in 0.2.3: a mapping done after the
+  write counted as its data (twice), a getter in a log line counted as work on the object, 39 lines
+  for fields renamed from `Dao` to `Mapper`, three enum constants with a typo fixed, an anonymous
+  class renumbered by an insertion, and checks that moved from `return` to a helper that throws.
+- **Six lines were true and useless**: a project's helper swapped for a library's (`size() > 0`
+  for `isEmpty()`, a private `copy` for `IOTool.copy`), and classes renamed while also being
+  reworked. These remain; the [limits](limits.md#known-gaps) list them.
+- **Seventeen were what a reviewer needed**, among them every security fix in the sample: four
+  permission checks added, two XSS fixes, two IDOR fixes, and a validation moved into a generated
+  API, which reads as the explicit check being gone.
+
 ## The security fixes, again
 
 The [0.1 experiment](experiment.md#security-fixes) picked 21 commits from these histories that fix

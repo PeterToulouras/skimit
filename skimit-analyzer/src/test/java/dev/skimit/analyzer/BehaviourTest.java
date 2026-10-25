@@ -80,6 +80,23 @@ class BehaviourTest {
   }
 
   @Test
+  void aThreadThatCausesNothingDoesNotHideAChangeInItsTwinThatWrites() throws IOException {
+    // Two threads started in one method share a name; the quiet one must not take over what the other runs.
+    String twins = """
+        public class Scheduler {
+          OrderRepository repo;
+          @jakarta.annotation.PostConstruct
+          public void start() {
+            new Thread(new Runnable() { public void run() { repo.save(%s); } }).start();
+            new Thread(new Runnable() { public void run() { System.out.println("tick"); } }).start();
+          }
+        }""";
+    Feed f = feed(program(String.format(twins, "20")), program(String.format(twins, "10")));
+    assertEquals(List.of("thread Scheduler.start: writes Order with different data: 20 → 10 (in Scheduler$1.run)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
   void movingCodeAroundChangesNothingAReaderIsShown() throws IOException {
     String renamed = SERVICE.replace("class OrderService", "class OrderServiceImpl");
     Analysis base = Compiler.analyze(program(SERVICE, CONTROLLER));
@@ -419,6 +436,25 @@ class BehaviourTest {
     Feed f = feed(program(route, guard, store, String.format(service, "who")), program(route, guard, store, String.format(service, "by")));
     assertEquals(List.of("POST /orders: writes Order with different data: Store.put now given by, not who (in OrderService.place)"),
         f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void twoArgumentsSwappedIsAChangeEvenWhenBothAreReads() throws IOException {
+    String route = """
+        import org.springframework.web.bind.annotation.*;
+        public class OrderController {
+          OrderService service;
+          @PostMapping("/orders") public void place(long id, String who, String by) { service.place(id, who, by); }
+        }""";
+    String store = "public class Store { OrderRepository repo; void put(String a, String b, long id) { repo.save(id); } }";
+    String service = "public class OrderService { Store store; void place(long id, String who, String by) { store.put(%s, id); } }";
+    Feed f = feed(program(route, store, String.format(service, "who, by")), program(route, store, String.format(service, "by, who")));
+    assertEquals(List.of("POST /orders: writes Order with different data: Store.put now given by and who, not who and by (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+    // A constant and a call swapped, as a real fix once did.
+    String constant = "public class OrderService { Store store; static final String DEFAULT = \"default\"; void place(long id, String who, String by) { store.put(%s, id); } }";
+    Feed g = feed(program(route, store, String.format(constant, "DEFAULT, by.trim()")), program(route, store, String.format(constant, "by.trim(), DEFAULT")));
+    assertFalse(g.isEmpty());
   }
 
   @Test

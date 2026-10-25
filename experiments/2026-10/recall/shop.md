@@ -19,14 +19,14 @@ Read-path changes, silent by design: 1 of 1.
 | `charge_twice` | behaviour | checkout charges a second time, a flat fee | **caught** | POST /checkout: writes MONEY via Ledger now using 100 (in CheckoutHandler.submit) |
 | `refund_cap` | behaviour | refunds over a limit are refused | **caught** | POST /refunds: changed the check before it writes MONEY via Ledger: now against 100000 (in RefundHandler.refund) |
 | `write_via_reflection` | behaviour | the same write, made through reflection | **caught** | POST /refunds no longer writes MONEY via Ledger (2 → 1 ways in); RefundHandler.refund now calls Method.invoke, which skimit does not follow |
-| `rename_local` | same | a parameter renamed | **silent** | No change in behaviour. |
-| `reformat_and_comment` | same | a comment and line breaks | **silent** | No change in behaviour. |
+| `rename_local` | same | a parameter renamed | **silent** | No change to what any way in writes, deletes, sends or calls. |
+| `reformat_and_comment` | same | a comment and line breaks | **silent** | No change to what any way in writes, deletes, sends or calls. |
 | `extract_local` | same | the total put in a local before the charge | **FALSE LINE** | POST /checkout: writes MONEY via Ledger with different data: the same steps in another order (in CheckoutHandler.submit) |
 | `extract_method` | same | the charge moved into a private helper | **FALSE LINE** | POST /checkout: writes MONEY via Ledger now using CheckoutHandler.charge, no longer Order.customer, PaymentService.charge and 1 more (in CheckoutHandler.submit) |
-| `move_class_package` | same | Permissions moved to another package | **silent** | No change in behaviour. |
-| `add_logging` | same | a line printed before the charge | **silent** | No change in behaviour. |
+| `move_class_package` | same | Permissions moved to another package | **silent** | No change to what any way in writes, deletes, sends or calls. |
+| `add_logging` | same | a line printed before the charge | **silent** | No change to what any way in writes, deletes, sends or calls. |
 | `unused_param` | same | a parameter added and never used | **FALSE LINE** | POST /checkout: writes MONEY via Ledger with different data (in CheckoutHandler.submit) |
-| `rename_method` | same | PaymentService.charge renamed to pay | **silent** | No change in behaviour. |
+| `rename_method` | same | PaymentService.charge renamed to pay | **silent** | No change to what any way in writes, deletes, sends or calls. |
 | `commute_multiplication` | same | the two factors of the price swapped | **FALSE LINE** | POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: the same steps in another order) |
 | `field_to_local` | same | the calculator made where it is used instead of held in a field | **FALSE LINE** | POST /checkout: writes MONEY via Ledger now using new PriceCalculator (in CheckoutHandler.submit) |
-| `read_path_rewrite` | read | the report pads its columns another way | **silent** | No change in behaviour. |
+| `read_path_rewrite` | read | the report pads its columns another way | **silent** | No change to what any way in writes, deletes, sends or calls. |

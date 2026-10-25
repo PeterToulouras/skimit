@@ -54,8 +54,8 @@ final class PathChange {
    * library and the fields it reaches collaborators through, which say how it is written.
    */
   record Part(String text, Set<String> names, List<String> values, Ops ops, Map<String, Call> calls, Map<String, Integer> counts,
-      Map<String, String> fields, Set<String> means, boolean accessors) {
-    static final Part NONE = new Part("", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false);
+      Map<String, String> fields, Set<String> means, boolean accessors, List<String> given) {
+    static final Part NONE = new Part("", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false, List.of());
   }
 
   /**
@@ -275,17 +275,23 @@ final class PathChange {
     boolean reordered = before != null && after != null
         && Delta.steps(text(before, Set.copyOf(java.util.Arrays.asList(before.instructions.toArray()))))
             .equals(Delta.steps(text(after, Set.copyOf(java.util.Arrays.asList(after.instructions.toArray())))));
-    return new Change(both && !sameSteps(a.data().text(), b.data().text()), both && !sameSteps(a.checks().text(), b.checks().text()),
+    return new Change(both && !sameSteps(a.data(), b.data()), both && !sameSteps(a.checks(), b.checks()),
         a.reaches() != b.reaches(), Delta.between(a.data(), b.data(), reordered), Delta.between(a.checks(), b.checks(), reordered));
   }
 
   /** Reading a parameter, a field or a constant changes nothing; moving such a step earlier or later is not a change. */
   private static final Pattern PURE = Pattern.compile("(?m)^(?:ALOAD this|[ILFDA]LOAD [^v\\s]\\S*|GET(?:FIELD|STATIC) .*|[ILFDA]CONST_\\S+|BIPUSH .*|SIPUSH .*|LDC .*|CHECKCAST .*)\\n");
 
-  /** Whether two texts of a part do the same steps, allowing the pure ones to sit in another order. */
-  static boolean sameSteps(String before, String after) {
-    return before.equals(after)
-        || Delta.steps(before).equals(Delta.steps(after)) && PURE.matcher(before).replaceAll("").equals(PURE.matcher(after).replaceAll(""));
+  /**
+   * Whether two versions of a part do the same steps. The pure ones, reads of parameters, fields
+   * and constants, may sit in another order, as long as every call is still given the same
+   * expressions in the same places: swapping two arguments is a change, even when both are reads.
+   */
+  static boolean sameSteps(Part before, Part after) {
+    if (before.text().equals(after.text())) return true;
+    return Delta.steps(before.text()).equals(Delta.steps(after.text()))
+        && PURE.matcher(before.text()).replaceAll("").equals(PURE.matcher(after.text()).replaceAll(""))
+        && before.given().equals(after.given());
   }
 
   /**
@@ -394,7 +400,7 @@ final class PathChange {
       frames = analyzer.analyze(owner, mn);
       sources = new Analyzer<>(new SourceInterpreter()).analyze(owner, mn);
     } catch (AnalyzerException e) {
-      Part unknown = new Part("?", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false);
+      Part unknown = new Part("?", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false, List.of());
       return new Slices(unknown, unknown, false, Set.of(), Set.of());
     }
     List<AbstractInsnNode> targets = new ArrayList<>();
@@ -460,6 +466,7 @@ final class PathChange {
     Map<String, Integer> counts = new TreeMap<>();
     Map<String, String> fields = new TreeMap<>();
     Set<String> overloaded = new HashSet<>();
+    List<String> given = new ArrayList<>();
     boolean accessors = false;
     for (AbstractInsnNode insn : mn.instructions) {
       if (!insns.contains(insn)) continue;
@@ -470,6 +477,8 @@ final class PathChange {
       }
       if (insn instanceof MethodInsnNode m) {
         String name = m.name.equals("<init>") ? "new " + Behaviour.simple(m.owner) : Behaviour.simple(m.owner) + "." + m.name;
+        // Every call, with what each of its arguments is computed from, in program order.
+        given.add(name + m.desc + String.join("|", call(owner, mn, locals, m, frames, sources).code()));
         if (core(m.owner)) {
           if (!asWritten(m)) means.add(name);
           continue;
@@ -490,7 +499,9 @@ final class PathChange {
       }
     }
     overloaded.forEach(calls::remove);
-    return new Part(text(mn, insns), names, values(mn, insns), Ops.of(insns), calls, counts, fields, means, accessors);
+    // Calls may move past one another (a value put in a local first); which expression each is given may not.
+    java.util.Collections.sort(given);
+    return new Part(text(mn, insns), names, values(mn, insns), Ops.of(insns), calls, counts, fields, means, accessors, given);
   }
 
   /** A field as a reader would name it: by itself in its own class, with its class elsewhere. */

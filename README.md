@@ -126,9 +126,13 @@ Replayed over 575 real commits from nine open-source Java projects, with no conf
   no more than 7.
 - **Checked against six projects' test suites** (2,109 tests): no run did anything the map says
   it cannot.
-- **Checked against known changes**: of 25 edits injected into the example shop, every one of
-  the 15 that change behaviour is said, and 5 of the 9 that only change the code are silent. The
-  four that are not are listed, with what skimit said.
+- **Checked against known changes**: of 25 edits injected into the example shop and 18 into
+  PetClinic REST, 25 of the 26 that change behaviour are said, and 9 of the 16 that only change
+  the code are silent. Each of the other seven is listed, with what skimit said.
+- **Sixty of the replayed commits read by hand**: of 30 skimit said nothing about, 22 changed
+  nothing a reviewer needed and 6 had, 4 of them checks that guard reads, which are outside what
+  skimit sees. Of 30 with lines about how, 17 were what a reviewer needed, 7 were wrong and are
+  fixed, 6 were true of the bytecode and useless.
 
 Full numbers and how to re-run them: [docs/evidence.md](docs/evidence.md).
 
