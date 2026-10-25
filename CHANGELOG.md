@@ -51,11 +51,20 @@ Found by reading 60 replayed commits against what skimit said about them (the ta
   behaviour a reviewer would want to know about, 4 of them in checks that guard reads, which are
   outside what skimit sees.
 
-Of the 25 changes injected into the example shop, all 15 that change behaviour are said (14 under
+Of the 26 changes injected into the example shop, all 15 that change behaviour are said (14 under
 0.2.2) and 5 of the 10 that change the code alone are silent (4 of 9 under 0.2.2). Of 18 injected
-into PetClinic REST, 10 of 11 that change behaviour are said and 4 of 6 refactorings are silent.
-The replay over the 575 commits and the runtime check are re-run by the `measure` workflow; the
-numbers are in [docs/evidence.md](docs/evidence.md).
+into PetClinic REST, all 11 that change behaviour are said and 5 of 6 refactorings are silent.
+
+The replay, the recall test on PetClinic REST and the runtime check are now run by the `measure`
+workflow on a GitHub runner, so every number in [docs/evidence.md](docs/evidence.md) can be
+re-made with a push. Over the 580 commits it builds (litemall builds five more on the runner than
+in October, and XXL-JOB's executor samples are built, which the October run left out), 65% say
+nothing, 27% say how and 9% say what, against 63%, 29% and 7% under 0.2.2. 17 commits that said
+only how now say nothing, each for one of the reasons above; 6 silent commits now speak, for
+changes inside repository implementations and in the sample `httpJobHandler`, which now also
+accounts for 4 commits that changed what the system can do. Lines about how fall from 977 to
+788, and 157 of them say a check is gone and come first. The runtime check on Spring PetClinic
+and PetClinic REST finds no misses.
 
 ## 0.2.2
 

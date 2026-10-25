@@ -117,18 +117,19 @@ see [docs/usage.md](docs/usage.md#in-ci). Workflows on `@v0` keep the 0.1 review
 
 ## Does it work?
 
-Replayed over 575 real commits from nine open-source Java projects, with no configuration:
+Replayed over 580 real commits from nine open-source Java projects, with no configuration, by a
+workflow anyone can re-run:
 
-- **63% changed nothing a way in does** (refactoring, renames, logging, read paths), and skimit
-  said so in one line. **7% changed what the system can do**, and **29% changed how it does what
+- **65% changed nothing a way in does** (refactoring, renames, logging, read paths), and skimit
+  said so in one line. **9% changed what the system can do**, and **27% changed how it does what
   it already did**.
-- **It fits on a screen**: the median commit with something to say needed 2 lines, and 85% needed
+- **It fits on a screen**: the median commit with something to say needed 2 lines, and 87% needed
   no more than 7.
 - **Checked against six projects' test suites** (2,109 tests): no run did anything the map says
   it cannot.
-- **Checked against known changes**: of 25 edits injected into the example shop and 18 into
-  PetClinic REST, 25 of the 26 that change behaviour are said, and 9 of the 16 that only change
-  the code are silent. Each of the other seven is listed, with what skimit said.
+- **Checked against known changes**: of 26 edits injected into the example shop and 18 into
+  PetClinic REST, all 26 that change behaviour are said, and 10 of the 16 that only change the
+  code are silent. Each of the other six is listed, with what skimit said.
 - **Sixty of the replayed commits read by hand**: of 30 skimit said nothing about, 22 changed
   nothing a reviewer needed and 6 had, 4 of them checks that guard reads, which are outside what
   skimit sees. Of 30 with lines about how, 17 were what a reviewer needed, 7 were wrong and are

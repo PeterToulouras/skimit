@@ -14,18 +14,18 @@ THEMES = {
 
 # Commits by what skimit diff said: no change in behaviour, only how it does what it already did,
 # a change to what it can do. Every project with the built-in rule and no policy.
-# From experiments/2026-10/feed-0.2.2: python3 docs/charts.py after editing these.
+# From experiments/2026-10/feed-0.2.3: python3 docs/charts.py after editing these.
 REPLAY = [
-    ("XXL-JOB", "195 commits, 2024 to 2026", [113, 75, 7]),
+    ("XXL-JOB", "195 commits, 2024 to 2026", [113, 71, 11]),
     ("Spring PetClinic", "84 commits, 2019 to 2026", [69, 13, 2]),
-    ("PetClinic REST", "78 commits, 2018 to 2026", [46, 26, 6]),
-    ("Apollo", "68 commits, 2024 to 2026", [28, 26, 14]),
-    ("litemall", "45 commits, 2020 to 2025", [26, 13, 6]),
-    ("newbee-mall", "37 commits, 2019 to 2025", [24, 12, 1]),
-    ("Spring Framework PetClinic", "26 commits, 2015 to 2026", [25, 1, 0]),
+    ("PetClinic REST", "78 commits, 2018 to 2026", [48, 24, 6]),
+    ("Apollo", "68 commits, 2024 to 2026", [31, 23, 14]),
+    ("litemall", "50 commits, 2019 to 2025", [31, 9, 10]),
+    ("newbee-mall", "37 commits, 2019 to 2025", [26, 10, 1]),
+    ("Spring Framework PetClinic", "26 commits, 2015 to 2026", [24, 2, 0]),
     ("JPetStore", "22 commits, 2020 to 2026", [21, 0, 1]),
     ("vhr", "20 commits, 2019 to 2020", [12, 3, 5]),
-    ("All nine projects", "575 commits", [364, 169, 42]),
+    ("All nine projects", "580 commits", [375, 155, 50]),
 ]
 
 
@@ -72,7 +72,7 @@ def replay(t):
         body += text(0, y + 12, name, t["ink"], 14, weight="600") + text(0, y + 30, sub, t["muted"], 12)
         body += bar(left, y, bw, 22, list(zip([k for k, _ in keys], counts)), t, lambda v, total: f"{v}")
         y += 64
-    return wrap(w, y - 8, body, "What 575 real commits to nine open-source projects did to behaviour")
+    return wrap(w, y - 8, body, "What 580 real commits to nine open-source projects did to behaviour")
 
 
 for name, t in THEMES.items():
