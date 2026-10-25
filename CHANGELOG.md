@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.2.3
+
+Found by injecting 25 known changes into the example shop and reading what skimit said
+(`scripts/recall.py`; the table is in `experiments/2026-10/recall/shop.md`).
+
+- **A check that is gone comes first among the lines about how.** "no longer checks
+  Permissions.canRefund before it writes MONEY" is the most dangerous line skimit can print, and
+  it sorted among the other changes to how, where seven lines would fold it away. It now comes
+  before every other line about how, as kind `CHECK_GONE` in the JSON; the counts of what and
+  how are unchanged.
+- **A change inside the effect's own code is a line.** The walk stops at the effect, so a change
+  in `Ledger.post` itself said "No change in behaviour." Now: "the code that writes MONEY via
+  Ledger changed (in Ledger.post: no longer uses ":")".
+- **A method renamed along with its callers is not a change**, as a moved class is not:
+  `PaymentService.charge` to `pay`, with the implementation and every caller updated, says
+  nothing. A supertype that declares the new name where it declared the old one is renamed with
+  it.
+- **A string or a box handed to another call first is not work done on the write.** A refund
+  sent to the account that had just been checked read "writes MONEY via Ledger now using
+  Permissions.canRefund"; it reads "Ledger.post now given user, not customer".
+- **A lost effect says when the map went blind.** A write moved behind reflection reads "POST
+  /refunds no longer writes MONEY via Ledger (2 → 1 ways in); RefundHandler.refund now calls
+  Method.invoke, which skimit does not follow".
+
+Found by reading 60 replayed commits against what skimit said about them (the table is in
+`experiments/2026-10/recall/labels.md`):
+
+- **Renamed fields are read by their old names**, as renamed methods and moved classes are. A
+  commit that renamed every `xxlJobInfoDao` field to `xxlJobInfoMapper` said 39 lines; it says
+  none. Several fields of one type renamed together, such as three enum constants with a typo
+  fixed, pair by the names they are closest to, and a getter renamed along with its field is the
+  same method.
+- **An anonymous class renumbered by an insertion is the same class**, also when it gained a
+  method. javac numbers them per top-level class, so a new one inserted earlier used to make the
+  next one "new on the way to" an effect.
+- **Only what is done to an object before the write is its data**, and reading from it is not
+  doing anything to it: mapping the saved entity to a response, or a getter in a log line, no
+  longer says the write has different data.
+- **A check that fails through a helper that always throws is still a check.** Moving from
+  `return` to `Fail.now(...)` used to read as every check before the write being gone.
+- **A value put in a local first, or passed through a second one, is not a change**, and reading
+  a parameter, a field or a constant earlier or later is not another order of steps, as long as
+  every call is still given the same expressions in the same places: swapping two arguments is
+  a change even when both are reads, as Apollo's permission-target fix was.
+- **Spring Data fragments are wired by name.** `SpringDataPetRepositoryImpl implements
+  PetRepositoryOverride` is reached through the repository, as Spring Data would reach it.
+- **The headline says what it means.** "No change in behaviour." is now "No change to what any
+  way in writes, deletes, sends or calls." Of 30 commits that got the old sentence, 6 had changed
+  behaviour a reviewer would want to know about, 4 of them in checks that guard reads, which are
+  outside what skimit sees.
+
+Of the 26 changes injected into the example shop, all 15 that change behaviour are said (14 under
+0.2.2) and 5 of the 10 that change the code alone are silent (4 of 9 under 0.2.2). Of 18 injected
+into PetClinic REST, all 11 that change behaviour are said and 5 of 6 refactorings are silent.
+
+The replay, the recall test on PetClinic REST and the runtime check are now run by the `measure`
+workflow on a GitHub runner, so every number in [docs/evidence.md](docs/evidence.md) can be
+re-made with a push. Over the 580 commits it builds (litemall builds five more on the runner than
+in October, and XXL-JOB's executor samples are built, which the October run left out), 65% say
+nothing, 27% say how and 9% say what, against 63%, 29% and 7% under 0.2.2. 17 commits that said
+only how now say nothing, each for one of the reasons above; 6 silent commits now speak, for
+changes inside repository implementations and in the sample `httpJobHandler`, which now also
+accounts for 4 commits that changed what the system can do. Lines about how fall from 977 to
+788, and 157 of them say a check is gone and come first. The runtime check on Spring PetClinic
+and PetClinic REST finds no misses.
+
 ## 0.2.2
 
 Lines about how an effect is done now say what changed in nearly every case, and changes that do

@@ -80,6 +80,23 @@ class BehaviourTest {
   }
 
   @Test
+  void aThreadThatCausesNothingDoesNotHideAChangeInItsTwinThatWrites() throws IOException {
+    // Two threads started in one method share a name; the quiet one must not take over what the other runs.
+    String twins = """
+        public class Scheduler {
+          OrderRepository repo;
+          @jakarta.annotation.PostConstruct
+          public void start() {
+            new Thread(new Runnable() { public void run() { repo.save(%s); } }).start();
+            new Thread(new Runnable() { public void run() { System.out.println("tick"); } }).start();
+          }
+        }""";
+    Feed f = feed(program(String.format(twins, "20")), program(String.format(twins, "10")));
+    assertEquals(List.of("thread Scheduler.start: writes Order with different data: 20 → 10 (in Scheduler$1.run)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
   void movingCodeAroundChangesNothingAReaderIsShown() throws IOException {
     String renamed = SERVICE.replace("class OrderService", "class OrderServiceImpl");
     Analysis base = Compiler.analyze(program(SERVICE, CONTROLLER));
@@ -307,6 +324,32 @@ class BehaviourTest {
   }
 
   @Test
+  void whatIsDoneToTheObjectAfterTheWriteIsNotItsData() throws IOException {
+    String item = "public class Item { void setName(String n) { } void setPrice(long p) { } }";
+    String items = "public class ItemRepository { public void save(Item i) { } }";
+    String service = "public class OrderService { ItemRepository items; void place(long id) { Item i = new Item(); i.setName(\"x\"); items.save(i); i.setPrice(id); } }";
+    Feed f = feed(program(service, CONTROLLER, item, items), program(service.replace("i.setPrice(id);", "i.setPrice(id + 1);"), CONTROLLER, item, items));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    // Reading from the object, to log it, is not work done on it either.
+    String logged = service.replace("items.save(i);", "System.out.println(i.toString()); items.save(i);");
+    Feed g = feed(program(service, CONTROLLER, item, items), program(logged, CONTROLLER, item, items));
+    assertTrue(g.isEmpty(), g.lines.toString());
+  }
+
+  @Test
+  void aCheckThatFailsThroughAHelperThatThrowsIsStillACheck() throws IOException {
+    String fail = "public class Fail { static void now(String why) { throw new IllegalStateException(why); } }";
+    String returning = SERVICE.replace("repo.save(id);", "if (repo.count() > 100) return; repo.save(id);");
+    String throwing = SERVICE.replace("repo.save(id);", "if (repo.count() > 100) Fail.now(\"too many\"); repo.save(id);");
+    Feed f = feed(program(returning, CONTROLLER, fail), program(throwing, CONTROLLER, fail));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    // And taking the check away still says so.
+    Feed g = feed(program(throwing, CONTROLLER, fail), program(SERVICE, CONTROLLER, fail));
+    assertEquals(List.of("POST /api/orders: no longer checks OrderRepository.count before it writes Order (in OrderService.place)"),
+        g.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
   void stepsThatMovedUnderANewGuardAreNotSaidToBeReordered() throws IOException {
     String item = "public class Item { void setName(String n) { } void setPrice(long p) { } }";
     String items = "public class ItemRepository { public void save(Item i) { } }";
@@ -342,6 +385,99 @@ class BehaviourTest {
     Analysis b = Compiler.analyze(program(using, CONTROLLER, msgs));
     Feed f = new Feed(new Behaviour(a), new Behaviour(b), new Differ(a, b), List.of());
     assertTrue(f.lines.stream().noneMatch(l -> l.text().contains("uses") || l.text().contains("using")), f.lines.toString());
+  }
+
+  @Test
+  void aChangeInsideTheEffectItselfIsALine() throws IOException {
+    // The walk stops at the write, but what the write does can change too.
+    String logging = REPOSITORY.replace("public void save(long id) { }",
+        "java.util.List<Long> log = new java.util.ArrayList<>(); public void save(long id) { log.add(id); }");
+    Feed f = feed(program(SERVICE, CONTROLLER), new String[] {REQUEST_MAPPING, POST_MAPPING, POST_CONSTRUCT, logging, SERVICE, CONTROLLER});
+    assertEquals(List.of("POST /api/orders: the code that writes Order changed (in OrderRepository.save: now uses log)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+    assertEquals(0, f.what());
+  }
+
+  @Test
+  void aMethodRenamedAlongWithItsCallersIsNotALine() throws IOException {
+    Feed f = feed(program(SERVICE, CONTROLLER),
+        program(SERVICE.replace("void place(long id)", "void create(long id)"), CONTROLLER.replace("service.place(id)", "service.create(id)")));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    // Through an interface renamed with its implementation.
+    String payments = "public interface Payments { void charge(long cents); }";
+    String card = "public class CardPayments implements Payments { OrderRepository repo; public void charge(long cents) { repo.save(cents); } }";
+    String route = CONTROLLER.replace("OrderService service;", "Payments payments;").replace("service.place(id);", "payments.charge(id);");
+    Feed g = feed(program(payments, card, route),
+        program(payments.replace("charge", "pay"), card.replace("void charge", "void pay"), route.replace("payments.charge", "payments.pay")));
+    assertTrue(g.isEmpty(), g.lines.toString());
+  }
+
+  @Test
+  void aCheckThatIsGoneComesFirstAmongLinesAboutHow() throws IOException {
+    String guarded = SERVICE.replace("repo.save(id);", "if (repo.count() > 100) return; repo.save(id);");
+    Feed f = feed(program(guarded, CONTROLLER), program(SERVICE, CONTROLLER.replace("service.place(id);", "service.place(id + 1);")));
+    assertEquals(List.of(Feed.Kind.CHECK_GONE, Feed.Kind.CHANGED_HOW), f.lines.stream().map(Feed.Line::kind).toList());
+    assertEquals("POST /api/orders: no longer checks OrderRepository.count before it writes Order (in OrderService.place)", f.lines.get(0).text());
+    assertEquals(0, f.what());
+    assertEquals("No new behaviour; 2 changes to how it does what it already did.", Output.headline(f));
+  }
+
+  @Test
+  void aStringHandedToAnotherCallFirstIsNotWorkDoneOnTheWrite() throws IOException {
+    String route = """
+        import org.springframework.web.bind.annotation.*;
+        public class OrderController {
+          OrderService service;
+          @PostMapping("/orders") public void place(long id, String who, String by) { service.place(id, who, by); }
+        }""";
+    String guard = "public class Guard { static boolean ok(String by) { return !by.isEmpty(); } }";
+    String store = "public class Store { OrderRepository repo; void put(String who, long id) { repo.save(id); } }";
+    String service = "public class OrderService { Store store; void place(long id, String who, String by) { if (!Guard.ok(by)) return; store.put(%s, id); } }";
+    Feed f = feed(program(route, guard, store, String.format(service, "who")), program(route, guard, store, String.format(service, "by")));
+    assertEquals(List.of("POST /orders: writes Order with different data: Store.put now given by, not who (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void twoArgumentsSwappedIsAChangeEvenWhenBothAreReads() throws IOException {
+    String route = """
+        import org.springframework.web.bind.annotation.*;
+        public class OrderController {
+          OrderService service;
+          @PostMapping("/orders") public void place(long id, String who, String by) { service.place(id, who, by); }
+        }""";
+    String store = "public class Store { OrderRepository repo; void put(String a, String b, long id) { repo.save(id); } }";
+    String service = "public class OrderService { Store store; void place(long id, String who, String by) { store.put(%s, id); } }";
+    Feed f = feed(program(route, store, String.format(service, "who, by")), program(route, store, String.format(service, "by, who")));
+    assertEquals(List.of("POST /orders: writes Order with different data: Store.put now given by and who, not who and by (in OrderService.place)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+    // A constant and a call swapped, as a real fix once did.
+    String constant = "public class OrderService { Store store; static final String DEFAULT = \"default\"; void place(long id, String who, String by) { store.put(%s, id); } }";
+    Feed g = feed(program(route, store, String.format(constant, "DEFAULT, by.trim()")), program(route, store, String.format(constant, "by.trim(), DEFAULT")));
+    assertFalse(g.isEmpty());
+  }
+
+  @Test
+  void aWriteNowMadeThroughReflectionSaysTheMapCannotFollowIt() throws IOException {
+    String throwing = CONTROLLER.replace("public void place(long id) {", "public void place(long id) throws Exception {");
+    String byName = "public class OrderService { OrderRepository repo; void place(long id) throws Exception {"
+        + " OrderRepository.class.getMethod(\"save\", long.class).invoke(repo, id); } }";
+    Feed f = feed(program(SERVICE, throwing), program(byName, throwing));
+    assertEquals(List.of("POST /api/orders no longer writes Order (1 → 0 ways in); OrderService.place now calls Method.invoke, which skimit does not follow"),
+        f.lines.stream().map(Feed.Line::text).toList());
+    assertEquals(Feed.Kind.LOSES, f.lines.get(0).kind());
+  }
+
+  @Test
+  void aValuePutInALocalFirstIsNotALine() throws IOException {
+    String ids = "public class Ids { static long next(long id) { return id + 1; } }";
+    String direct = SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id));");
+    String viaLocal = SERVICE.replace("repo.save(id);", "long next = Ids.next(id); repo.save(next);");
+    Feed f = feed(program(direct, CONTROLLER, ids), program(viaLocal, CONTROLLER, ids));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    String aliased = SERVICE.replace("repo.save(id);", "long same = id; repo.save(same);");
+    Feed g = feed(program(SERVICE, CONTROLLER), program(aliased, CONTROLLER));
+    assertTrue(g.isEmpty(), g.lines.toString());
   }
 
   @Test

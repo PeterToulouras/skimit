@@ -1,0 +1,179 @@
+# Re-measures the evidence in docs/evidence.md with the skimit built from this checkout: the replay
+# over each project's history, the recall test on a real project, and the map checked against a
+# real test suite. Run it by hand, or push a measure/* branch. The results are artifacts; nothing
+# here fails on what the numbers say.
+name: measure
+on:
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: Replay only these projects (comma-separated); empty for all
+        required: false
+        default: ''
+      classes:
+        description: "owner/name sha: build that commit and its parent and upload their classes, instead of measuring"
+        required: false
+        default: ''
+  push:
+    branches: ['measure/**']
+    paths-ignore: ['.github/workflows/**']
+permissions:
+  contents: read
+jobs:
+  classes:
+    if: inputs.classes != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 21 }
+      - run: |
+          read -r repo sha <<< "${{ inputs.classes }}"
+          git clone -q "https://github.com/$repo.git" project
+          for side in base head; do
+            rev="$sha"; [ "$side" = base ] && rev="$sha^"
+            git -C project checkout -q "$rev" && git -C project clean -qfdx
+            (cd project && mvn -q -B -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true compile)
+            n=0
+            while IFS= read -r d; do n=$((n + 1)); mkdir -p "out/$side"; cp -r "$d" "out/$side/$n"; done < <(
+              find project -type d \( -path '*/target/classes' -o -path '*/build/classes/java/main' \) -not -path '*/node_modules/*' | sort)
+            echo "$side: $n class directories"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: classes
+          path: out
+
+  skimit:
+    if: inputs.classes == ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 21, cache: maven }
+      - run: mvn -q -B -DskipTests package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: skimit-jars
+          path: |
+            skimit-analyzer/target/skimit.jar
+            skimit-agent/target/skimit-agent.jar
+
+  replay:
+    needs: skimit
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        # The projects, revisions and counts of experiments/2026-10/projects.txt, so the same
+        # commits are replayed as in the published numbers.
+        include:
+          - { project: spring-petclinic-rest, repo: spring-petclinic/spring-petclinic-rest, rev: afc8fc1d3b, count: 100 }
+          - { project: spring-petclinic, repo: spring-projects/spring-petclinic, rev: 500158f732, count: 100 }
+          - { project: spring-framework-petclinic, repo: spring-petclinic/spring-framework-petclinic, rev: cf392920cd, count: 100 }
+          - { project: jpetstore-6, repo: mybatis/jpetstore-6, rev: 344ef63ddf, count: 100 }
+          # vhr's build lives in a subdirectory.
+          - { project: vhr, repo: lenve/vhr, rev: 03abbd35af, count: 100, build: mvn -q -B -f vhr/vhrserver/pom.xml -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true compile }
+          - { project: newbee-mall, repo: newbee-ltd/newbee-mall, rev: a069069b07, count: 100 }
+          - { project: litemall, repo: linlinjava/litemall, rev: a1ef964a71, count: 100 }
+          - { project: xxl-job, repo: xuxueli/xxl-job, rev: 693d27640b, count: 200 }
+          - { project: apollo, repo: apolloconfig/apollo, rev: 42d4d827eb, count: 77, build: bash $GITHUB_WORKSPACE/experiments/2026-10/apollo-build.sh }
+    steps:
+      - uses: actions/checkout@v7
+        if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+      - uses: actions/setup-java@v6
+        if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+        with: { distribution: temurin, java-version: 21, cache: maven }
+      - uses: actions/download-artifact@v7
+        if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+        with: { name: skimit-jars, path: jars }
+      - if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+        run: |
+          git clone -q https://github.com/${{ matrix.repo }}.git "$RUNNER_TEMP/project"
+          git -C "$RUNNER_TEMP/project" checkout -q ${{ matrix.rev }}
+      - if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+        env:
+          SKIMIT_JAR: ${{ github.workspace }}/jars/skimit-analyzer/target/skimit.jar
+          REPLAY_WORK: ${{ runner.temp }}/replay
+          REPLAY_TIMEOUT: '900'
+        run: |
+          build="${{ matrix.build }}"
+          if [ -n "$build" ]; then scripts/replay.sh "$RUNNER_TEMP/project" - ${{ matrix.count }} -- $build
+          else scripts/replay.sh "$RUNNER_TEMP/project" - ${{ matrix.count }}; fi
+          python3 scripts/feed.py "$REPLAY_WORK" > "$REPLAY_WORK/feed.jsonl"
+      - uses: actions/upload-artifact@v7
+        if: always() && (inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project)))
+        with:
+          name: replay-${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/replay/replay.jsonl
+            ${{ runner.temp }}/replay/feed.jsonl
+            ${{ runner.temp }}/replay/diffs
+
+  recall:
+    needs: skimit
+    if: inputs.projects == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 21, cache: maven }
+      - uses: actions/download-artifact@v7
+        with: { name: skimit-jars, path: jars }
+      - run: |
+          git clone -q https://github.com/spring-petclinic/spring-petclinic-rest.git "$RUNNER_TEMP/project"
+          git -C "$RUNNER_TEMP/project" checkout -q afc8fc1d3b
+          # Warm the dependency cache once, so each mutation's build is a compile and no more.
+          (cd "$RUNNER_TEMP/project" && mvn -q -B -Dmaven.test.skip=true compile)
+      - env:
+          SKIMIT_JAR: ${{ github.workspace }}/jars/skimit-analyzer/target/skimit.jar
+        run: |
+          python3 scripts/recall.py --project "$RUNNER_TEMP/project" --mutations experiments/2026-10/recall/petclinic-rest.json \
+            --build "mvn -q -B -o -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true compile" \
+            --classes target/classes --out "$RUNNER_TEMP/recall-petclinic-rest.md"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: recall-petclinic-rest
+          path: ${{ runner.temp }}/recall-petclinic-rest.md
+
+  verify:
+    needs: skimit
+    if: inputs.projects == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: spring-petclinic-rest, repo: spring-petclinic/spring-petclinic-rest, rev: afc8fc1d3b }
+          - { project: spring-petclinic, repo: spring-projects/spring-petclinic, rev: 500158f732 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 21, cache: maven }
+      - uses: actions/download-artifact@v7
+        with: { name: skimit-jars, path: jars }
+      - run: |
+          git clone -q https://github.com/${{ matrix.repo }}.git "$RUNNER_TEMP/project"
+          git -C "$RUNNER_TEMP/project" checkout -q ${{ matrix.rev }}
+      - working-directory: ${{ runner.temp }}/project
+        run: |
+          jar="$GITHUB_WORKSPACE/jars/skimit-analyzer/target/skimit.jar"
+          agent="$GITHUB_WORKSPACE/jars/skimit-agent/target/skimit-agent.jar"
+          mvn -q -B -Dcheckstyle.skip=true -Denforcer.skip=true -Dspring-javaformat.skip=true test-compile
+          java -jar "$jar" map target/classes target/test-classes --agent-config agent.conf > map.md
+          # The run itself may fail a test or two on a runner; the trace is what matters here.
+          mvn -q -B -Dcheckstyle.skip=true -Denforcer.skip=true -Dspring-javaformat.skip=true -Djacoco.skip=true \
+            "-DargLine=-javaagent:$agent=config=$PWD/agent.conf,out=$PWD/trace-%p.txt" test || true
+          ls trace-*.txt
+          java -jar "$jar" verify target/classes target/test-classes $(for t in trace-*.txt; do printf -- '--trace %s ' "$t"; done) \
+            > "$RUNNER_TEMP/verify-${{ matrix.project }}.txt" || true
+          cat "$RUNNER_TEMP/verify-${{ matrix.project }}.txt"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verify-${{ matrix.project }}
+          path: ${{ runner.temp }}/verify-${{ matrix.project }}.txt

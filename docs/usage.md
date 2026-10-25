@@ -44,8 +44,8 @@ java -jar skimit.jar diff --base base/target/classes --head head/target/classes
 
 - **Breaks a rule (never "GET *" writes *): GET /reports/sales writes MONEY via Ledger**
 - GET /reports/sales now writes MONEY via Ledger (2 → 3 ways in)
-- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 - POST /refunds: no longer checks Permissions.canRefund before it writes MONEY via Ledger (in RefundHandler.refund)
+- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 ```
 
 The first sentence is the answer. Then come the lines, in this order:
@@ -57,12 +57,16 @@ The first sentence is the answer. Then come the lines, in this order:
 | now writes, calls, sends | A way in gains an effect. |
 | New way in, Removed | A route, job or listener that causes something appeared or went. |
 | is now | A way in answers to a new name and does the same things. |
-| no longer writes, calls, sends | A way in lost an effect. |
-| how | Same effects, done differently: a new or removed check before an effect, different data going into it, or a new call on the way to it, with the method where that happened and what changed there. |
+| no longer writes, calls, sends | A way in lost an effect. When a changed method on its way now calls through reflection, the line says so: the map cannot see past that. |
+| no longer checks | A check that stood before an effect is gone. This comes first among the lines about how, since it is the one most worth a look. |
+| how | Same effects, done differently: a new check before an effect, different data going into it, a new call on the way to it, or a change in the effect's own code, with the method where that happened and what changed there. |
 
 Seven lines are shown; the rest fold away. Code that nothing calls is not a way in, so a service
 written before its route says nothing until the route exists. A change that does none of these
-things, such as a reformatted helper or a renamed class, says "No change in behaviour."
+things, such as a reformatted helper or a renamed class, says "No change to what any way in writes,
+deletes, sends or calls." That sentence is exact: a check on a read path, an interceptor's path
+patterns or a mapping annotation can change what the program does without any of those changing,
+and skimit will not have seen it (see [limits](limits.md#known-gaps)).
 
 `--html page.html` writes one HTML file: the answer, what the change did, and the map
 after it. Pass the source diff too and each line about a method can show that method's code, on
@@ -226,6 +230,16 @@ On another CI system, `action/run.sh <base-commit>` does the same job from the r
 checkout. skimit's own repository runs the action on every pull request: see
 [.github/workflows/skimit.yml](../.github/workflows/skimit.yml) and its
 [policy](../skimit.policy).
+
+## With an AI reviewer
+
+An agent that reviews code can run skimit first and lead with what the change did, instead of
+reading every line and guessing. `--json` is the contract: `headline`, the counts, and each
+line's `kind`, `text`, `methods` and `code`. The kinds are listed most important first in
+[.claude/skills/skimit/SKILL.md](../.claude/skills/skimit/SKILL.md), a skill for Claude Code that
+builds the base and head, runs the comparison, and says how to use the lines and where skimit
+cannot see. Copy it into a project's `.claude/skills/` directory, or into your own, and the agent
+will reach for skimit when asked to review a Java change.
 
 ## Replay your own history
 

@@ -75,13 +75,6 @@ public final class Verifier {
     }
   }
 
-  /** Calls that pick what they run by name at run time: reflection and method handles. */
-  private static final List<Policy.Rule> BY_NAME = List.of(
-      Policy.rule("BY_NAME", "java.lang.reflect.Method#invoke"), Policy.rule("BY_NAME", "java.lang.reflect.Constructor#newInstance"),
-      Policy.rule("BY_NAME", "java.lang.invoke.MethodHandle#invoke*"),
-      Policy.rule("BY_NAME", "org.springframework.util.ReflectionUtils#invokeMethod"),
-      Policy.rule("BY_NAME", "org.springframework.test.util.ReflectionTestUtils#invokeMethod"));
-
   private final java.util.Map<MethodKey, Boolean> byNameCache = new java.util.HashMap<>();
 
   /** Whether the method, or anything it calls, calls something by name: from there the map does not follow. */
@@ -92,8 +85,7 @@ public final class Verifier {
       Set<CallGraph.Node> seen = new java.util.HashSet<>(work);
       while (!work.isEmpty()) {
         for (CallGraph.Node n : g.calleesOf(work.poll())) {
-          MethodKey c = n.method();
-          if (BY_NAME.stream().anyMatch(r -> r.matches(c.owner(), c.name()))) return true;
+          if (Policy.byName(n.method())) return true;
           if (seen.add(n)) work.add(n);
         }
       }

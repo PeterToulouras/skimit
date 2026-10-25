@@ -114,6 +114,60 @@ class DifferTest {
   }
 
   @Test
+  void aMethodRenamedWithTheSameBodyIsNotAChangeNorAreItsCallers() throws IOException {
+    Differ d = diff(new String[] {LEDGER, ORDERS, SHOP},
+        new String[] {LEDGER, ORDERS.replace("void place(long cents)", "void submit(long cents)"), SHOP.replace("o.place(5)", "o.submit(5)")});
+    assertTrue(d.changes.isEmpty(), d.changes.toString());
+    assertEquals("Orders#place(J)V", d.methodRenames.get(new MethodKey("Orders", "submit", "(J)V")).id());
+    // Two methods that happen to have the same body are not a rename of each other.
+    String twins = ORDERS.replace("public String label() { return \"orders\"; }", "public String label() { return \"orders\"; } public String name() { return \"orders\"; }");
+    Differ e = diff(new String[] {LEDGER, twins, SHOP},
+        new String[] {LEDGER, twins.replace("String label()", "String title()").replace("String name()", "String id()"), SHOP});
+    assertTrue(e.methodRenames.isEmpty(), e.methodRenames.toString());
+    assertEquals(4, e.changes.size(), e.changes.toString());
+  }
+
+  @Test
+  void aFieldRenamedWithItsUsesIsNotAChange() throws IOException {
+    Differ d = diff(new String[] {LEDGER, ORDERS, SHOP},
+        new String[] {LEDGER, ORDERS.replace("Ledger l;", "Ledger ledger;").replace("l.post(cents)", "ledger.post(cents)"), SHOP});
+    assertTrue(d.changes.isEmpty(), d.changes.toString());
+    assertEquals(Map.of("Orders.ledger : LLedger;", "Orders.l : LLedger;"), d.fieldRenames);
+    // Several fields of one type renamed together pair by the names they are closest to.
+    String books = "public class Books { Ledger lgr; Ledger adt; void a(long c) { lgr.post(c); } void b(long c) { adt.post(c); } }";
+    Differ e = diff(new String[] {LEDGER, books},
+        new String[] {LEDGER, books.replace("Ledger lgr;", "Ledger ledger;").replace("lgr.post", "ledger.post").replace("Ledger adt;", "Ledger audit;").replace("adt.post", "audit.post")});
+    assertTrue(e.changes.isEmpty(), e.changes.toString());
+    // A getter renamed along with its field, and the calls to it.
+    String getter = "public class Books { Ledger lgr; Ledger getLgr() { return lgr; } void a(long c) { getLgr().post(c); } }";
+    Differ f = diff(new String[] {LEDGER, getter},
+        new String[] {LEDGER, getter.replace("Ledger lgr;", "Ledger ledger;").replace("return lgr", "return ledger").replace("getLgr", "getLedger")});
+    assertTrue(f.changes.isEmpty(), f.changes.toString());
+  }
+
+  @Test
+  void anAnonymousClassRenumberedByAnInsertionIsTheSameClass() throws IOException {
+    String before = """
+        public class Pool {
+          Ledger l;
+          void start() { Runnable a = new Runnable() { public void run() { l.post(1); } }; a.run(); }
+          void stop() { Runnable b = new Runnable() { public void run() { l.post(2); } }; b.run(); }
+        }""";
+    // A new anonymous class in start() renumbers the one in stop(), which did not change.
+    String after = before.replace("a.run(); }", "a.run(); Runnable x = new Runnable() { public void run() { } }; x.run(); }");
+    Differ d = diff(new String[] {LEDGER, before}, new String[] {LEDGER, after});
+    assertEquals("Pool$2", d.renames.map.get("Pool$3"));
+    assertEquals(List.of("Pool$2.<init>:added", "Pool$2.run:added", "Pool.start:changed"),
+        d.changes.stream().map(c -> c.method().owner() + "." + c.method().name() + ":" + c.kind()).sorted().toList());
+    // Still the same class when it also gained a method.
+    String grown = after.replace("l.post(2); } }; b.run();", "l.post(2); } public String toString() { return \"b\"; } }; b.run();");
+    Differ e = diff(new String[] {LEDGER, before}, new String[] {LEDGER, grown});
+    assertEquals("Pool$2", e.renames.map.get("Pool$3"));
+    assertEquals(List.of("Pool$2.<init>:added", "Pool$2.run:added", "Pool$3.toString:added", "Pool.start:changed"),
+        e.changes.stream().map(c -> c.method().owner() + "." + c.method().name() + ":" + c.kind()).sorted().toList());
+  }
+
+  @Test
   void twoSmallClassesThatOnlyLookAlikeAreNotAMove() throws IOException {
     Differ d = diff(new String[] {LEDGER, "public class Alpha { }"}, new String[] {LEDGER, "public class Beta { }"});
     assertTrue(d.renames.map.isEmpty());

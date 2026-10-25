@@ -105,7 +105,10 @@ public final class Behaviour {
         if (threadsSeen.add(t.method())) work.add(Map.entry(threadEntry(t.method()), g.nodesOf.getOrDefault(t.method(), List.of(t))));
       }
       if (found.isEmpty()) {
-        if (!entry.kind().equals("uncalled")) quiet.add(entry.id());
+        // What it runs is kept, so that a change can say why it stopped causing something. A way
+        // in that causes something and shares the name (two threads started in one method) keeps
+        // its own, whichever was walked first.
+        if (!entry.kind().equals("uncalled") && quiet.add(entry.id())) runs.putIfAbsent(entry.id(), seen);
         continue;
       }
       // Two methods can carry the same name (an override and its interface, two threads of one class).

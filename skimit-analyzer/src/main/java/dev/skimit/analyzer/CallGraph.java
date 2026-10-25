@@ -516,6 +516,7 @@ public final class CallGraph {
       if (cn.superName != null) direct.computeIfAbsent(cn.superName, k -> new HashSet<>()).add(cn.name);
       for (String itf : cn.interfaces) direct.computeIfAbsent(itf, k -> new HashSet<>()).add(cn.name);
     }
+    fragments(direct);
     for (String type : direct.keySet()) {
       Set<String> all = new TreeSet<>();
       Deque<String> work = new ArrayDeque<>(direct.get(type));
@@ -524,6 +525,29 @@ public final class CallGraph {
         if (all.add(s)) work.addAll(direct.getOrDefault(s, Collections.emptySet()));
       }
       subtypes.put(type, all);
+    }
+  }
+
+  /**
+   * Spring Data wires a repository interface's own methods to a class named after the repository
+   * or after the fragment interface that declares them, with {@code Impl}: {@code
+   * SpringDataPetRepository extends PetRepositoryOverride}, and {@code SpringDataPetRepositoryImpl
+   * implements PetRepositoryOverride}. Nothing in the code says so, so such a class is made a
+   * subtype of the repository, and a call through the repository can land on it.
+   */
+  private void fragments(Map<String, Set<String>> direct) {
+    for (ClassNode repo : program.classes.values()) {
+      if ((repo.access & Opcodes.ACC_INTERFACE) == 0 || repo.interfaces.stream().noneMatch(i -> i.startsWith("org/springframework/data/"))) continue;
+      for (String fragment : repo.interfaces) {
+        ClassNode f = program.classes.get(fragment);
+        if (f == null || (f.access & Opcodes.ACC_INTERFACE) == 0) continue;
+        for (String impl : new ArrayList<>(direct.getOrDefault(fragment, Set.of()))) {
+          String name = impl.substring(impl.lastIndexOf('/') + 1);
+          boolean named = name.equals(repo.name.substring(repo.name.lastIndexOf('/') + 1) + "Impl")
+              || name.equals(fragment.substring(fragment.lastIndexOf('/') + 1) + "Impl");
+          if (named && concrete(impl)) direct.computeIfAbsent(repo.name, k -> new HashSet<>()).add(impl);
+        }
+      }
     }
   }
 
@@ -866,6 +890,40 @@ public final class CallGraph {
     targets.add(to.method());
     callees.computeIfAbsent(from, k -> new LinkedHashSet<>()).add(to);
     callers.computeIfAbsent(to, k -> new LinkedHashSet<>()).add(from);
+  }
+
+  private final Map<MethodKey, Boolean> neverReturns = new HashMap<>();
+
+  /**
+   * Whether a call to this method never comes back: an application method with a body and no
+   * return instruction, such as a helper that always throws. A check that fails through one is
+   * still a check.
+   */
+  public boolean neverReturns(String owner, String name, String desc) {
+    MethodKey k = resolveUp(owner, name, desc);
+    if (k == null) return false;
+    return neverReturns.computeIfAbsent(k, key -> {
+      MethodNode mn = methods.get(key);
+      if (mn == null || !hasBody(key) || mn.instructions.size() == 0) return false;
+      for (AbstractInsnNode insn : mn.instructions) {
+        int op = insn.getOpcode();
+        if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN) return false;
+      }
+      return true;
+    });
+  }
+
+  /** The application classes and interfaces above a class, itself left out. */
+  public Set<String> supertypesOf(String owner) {
+    Set<String> out = new TreeSet<>();
+    Deque<String> work = new ArrayDeque<>(List.of(owner));
+    while (!work.isEmpty()) {
+      ClassNode cn = program.classes.get(work.poll());
+      if (cn == null) continue;
+      if (cn.superName != null && program.classes.containsKey(cn.superName) && out.add(cn.superName)) work.add(cn.superName);
+      for (String itf : cn.interfaces) if (program.classes.containsKey(itf) && out.add(itf)) work.add(itf);
+    }
+    return out;
   }
 
   /** The application method a call would bind to, searching the owner and its supertypes. */

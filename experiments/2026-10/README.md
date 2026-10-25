@@ -7,8 +7,13 @@ Two sets of results on the same commits and test suites.
 
 | File | What it is |
 |---|---|
-| `feed-0.2.2/<project>.jsonl` | One line per commit tried: the headline, the counts, and every line `skimit diff` printed, or why it was skipped |
-| `verify-0.2.0/<project>.txt` | Output of `skimit verify` on each project's test suite |
+| `feed-0.2.3/<project>.jsonl` | One line per commit tried by the `measure` workflow with skimit 0.2.3: the headline, the counts, and every line `skimit diff` printed, or why it was skipped |
+| `feed-0.2.2/<project>.jsonl` | The same under 0.2.2, from the October run on one machine |
+| `verify-0.2.3/<project>.txt` | Output of `skimit verify` on Spring PetClinic's and PetClinic REST's test suites, run by the `measure` workflow |
+| `verify-0.2.0/<project>.txt` | Output of `skimit verify` on each of six projects' test suites, under 0.2.0 |
+| `recall/shop.md` | 25 changes injected into the example shop by `scripts/recall.py` with skimit 0.2.3: which were said, which were missed, which produced a line for a change to code alone |
+| `recall/petclinic-rest.json`, `recall/petclinic-rest.md` | The same for 18 changes injected into PetClinic REST, run by the `measure` workflow |
+| `recall/labels.md` | Sixty replayed commits read by hand against what skimit said, with a verdict and a note on each |
 
 **skimit 0.1**, which sorted changed methods into review buckets, written up in
 [docs/experiment.md](../../docs/experiment.md). These were computed with skimit 0.1.1 unless a file

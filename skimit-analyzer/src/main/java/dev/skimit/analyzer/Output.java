@@ -66,7 +66,8 @@ public final class Output {
     long broken = f.broken();
     long what = f.what();
     long how = f.lines.size() - broken - what;
-    if (f.isEmpty()) return "No change in behaviour.";
+    // Said in skimit's own terms: a check on a read path, or a mapping annotation, is outside them.
+    if (f.isEmpty()) return "No change to what any way in writes, deletes, sends or calls.";
     List<String> parts = new ArrayList<>();
     if (broken > 0) parts.add(broken == 1 ? "1 thing needs a person." : broken + " things need a person.");
     if (what > 0) parts.add(what == 1 ? "1 change to what the system can do." : what + " changes to what the system can do.");

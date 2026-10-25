@@ -63,7 +63,9 @@ methods of the handler its callers construct that implement `ContentHandler`. Th
 callback through wrappers that pass it on or wrap it again, but only through parameters.
 
 A bean method named in an annotation expression (`@PreAuthorize("@rules.canEdit(#id)")`) is
-called by the annotated method. `toString`, `hashCode` and `equals` called on a plain `Object`
+called by the annotated method. A Spring Data repository's own methods are wired to the class
+named after the repository or after the fragment interface, with `Impl`, as Spring Data wires
+them, so a call through the repository can land there. `toString`, `hashCode` and `equals` called on a plain `Object`
 are not followed into the application.
 
 ## What a change did
@@ -79,6 +81,15 @@ are identical once the new name is read as the old one, and either two of them a
 methods or one name contains the other. Once paired, every method is compared with the method it
 was, and code elsewhere that only switched to the new name is not a change.
 
+A method renamed and nothing more is matched the same way: a method that exists only after the
+change is paired with the one method of its class that existed only before it and has the same
+signature and the same body; a supertype that declares the new name where it declared the old one
+is renamed with it. A field renamed and nothing more is paired with the one field of its type and
+access that went, or, when several were renamed together, with the old name it is closest to. An
+anonymous class whose methods have exactly the bodies of one that went is that class under a new
+number, since javac renumbers them when one is inserted. A method whose only edit is one of these
+new names is not a change.
+
 **Which ways in are the same.** A way in keeps its name across the change, or keeps its method
 when the method moved with its class. A route renamed along with its method (`/jobinfo/remove` to
 `/jobinfo/delete`) is still the same way in when it is the only one of its kind that does exactly
@@ -87,24 +98,32 @@ only got a new name and path runs the same code, and says nothing more than that
 
 **What it can do.** For each way in, the effects after the change are compared with those before:
 an effect gained or lost is a line. A way in that was there before and caused nothing, and now
-causes something, gains it.
+causes something, gains it. A way in that lost an effect because a changed method on its way now
+calls through reflection or a method handle says so on the line, since the map cannot see past
+that call and the effect may well still happen.
 
 **How it does what it already did.** For each changed method that a way in runs on the way to an
 effect it already had, skimit slices the method twice, before and after, by data flow over its
 bytecode:
 
 - the **data slice**: the instructions that compute the values going into the calls toward the
-  effect, and anything else done to those objects beforehand (`pet.setOwner(owner)` before
-  `save(pet)`). Numbers and flags have no identity: passing the same id to two calls does not join
-  them.
+  effect, and anything else done to those objects before the last of those calls
+  (`pet.setOwner(owner)` before `save(pet)`; not `toPetDto(pet)` after it, and not a getter, which
+  does nothing to the object). Numbers, flags, strings and boxed values have no identity: passing
+  the same id or the same name to two calls does not join them, since nothing done to one can
+  change it.
 - the **check slice**: the branches with a call toward the effect down one side only, and what
-  they test.
+  they test. A call to a method that never returns, a helper that always throws, ends its side.
 
-Each slice is compared as normalised text: locals renumbered, a parameter known by its type and
-its place among the parameters of that type, lambda numbers dropped, classes known by their simple
-names, and a call to a method the same whether it is made directly or through its type. So a
-class that only moved package (`javax` to `jakarta`), a private method made visible to a proxy,
-or a new parameter of another type that the slice does not use is not a change. If neither slice
+Each slice is compared as normalised text: a parameter known by its type and its place among the
+parameters of that type, other locals left out (a local is a name for a value, not a step), lambda
+numbers dropped, classes known by their simple names, a call to a method the same whether it is
+made directly or through its type, and reads of parameters, fields and constants allowed to sit
+in another order as long as every call is still given the same expressions in the same places
+(swapping two arguments is a change, even when both are reads). So a class that only moved
+package (`javax` to `jakarta`), a private method made
+visible to a proxy, a value put in a local first, or a new parameter of another type that the
+slice does not use is not a change. If neither slice
 changed, the change made no difference to that effect and there is no line. If one did, the line
 says which, and what changed in it as far as the bytecode can say:
 
@@ -129,8 +148,14 @@ new says so, and has no line of its own when the line about its caller names it.
 than 4,000 instructions are not sliced: a change in one, or in a method one of them calls on the
 way to an effect, is reported without detail.
 
+The effect's own code can change too, though the walk stops at it: a changed `Ledger.post` or
+repository `save` is a line of its own, "the code that writes Order changed", with what changed in
+it in the same terms.
+
 Lines with the same words are merged across ways in and across methods, so thirty helpers behind
 one write that changed alike are one line; when a few changed in different ways, each says how.
+A check that is gone, on the way to an effect or in a helper that decided it, comes before every
+other line about how.
 
 **Rules.** The never and only rules are checked on the map before and after the change, and a
 breach that is new is a line; a review rule flags a way in that gains a matching effect. See

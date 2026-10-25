@@ -54,8 +54,8 @@ final class PathChange {
    * library and the fields it reaches collaborators through, which say how it is written.
    */
   record Part(String text, Set<String> names, List<String> values, Ops ops, Map<String, Call> calls, Map<String, Integer> counts,
-      Map<String, String> fields, Set<String> means, boolean accessors) {
-    static final Part NONE = new Part("", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false);
+      Map<String, String> fields, Set<String> means, boolean accessors, List<String> given) {
+    static final Part NONE = new Part("", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false, List.of());
   }
 
   /**
@@ -262,18 +262,36 @@ final class PathChange {
     }
   }
 
-  static Change compare(String ownerBefore, MethodNode before, Map<Integer, String> localsBefore, Predicate<AbstractInsnNode> towardBefore,
-      String ownerAfter, MethodNode after, Map<Integer, String> localsAfter, Predicate<AbstractInsnNode> towardAfter) {
-    Slices a = slices(ownerBefore, before, localsBefore, towardBefore);
-    Slices b = slices(ownerAfter, after, localsAfter, towardAfter);
+  /** What a method calls toward an effect, and what it calls that never returns (a helper that always throws). */
+  record Calls(Predicate<AbstractInsnNode> toward, Predicate<AbstractInsnNode> stops) {}
+
+  static Change compare(String ownerBefore, MethodNode before, Map<Integer, String> localsBefore, Calls callsBefore,
+      String ownerAfter, MethodNode after, Map<Integer, String> localsAfter, Calls callsAfter) {
+    Slices a = slices(ownerBefore, before, localsBefore, callsBefore);
+    Slices b = slices(ownerAfter, after, localsAfter, callsAfter);
     boolean both = a.reaches() && b.reaches();
     // A slice can look reordered while the method around it changed what guards it: say so only
     // when the whole method takes the same steps.
     boolean reordered = before != null && after != null
         && Delta.steps(text(before, Set.copyOf(java.util.Arrays.asList(before.instructions.toArray()))))
             .equals(Delta.steps(text(after, Set.copyOf(java.util.Arrays.asList(after.instructions.toArray())))));
-    return new Change(both && !a.data().text().equals(b.data().text()), both && !a.checks().text().equals(b.checks().text()),
+    return new Change(both && !sameSteps(a.data(), b.data()), both && !sameSteps(a.checks(), b.checks()),
         a.reaches() != b.reaches(), Delta.between(a.data(), b.data(), reordered), Delta.between(a.checks(), b.checks(), reordered));
+  }
+
+  /** Reading a parameter, a field or a constant changes nothing; moving such a step earlier or later is not a change. */
+  private static final Pattern PURE = Pattern.compile("(?m)^(?:ALOAD this|[ILFDA]LOAD [^v\\s]\\S*|GET(?:FIELD|STATIC) .*|[ILFDA]CONST_\\S+|BIPUSH .*|SIPUSH .*|LDC .*|CHECKCAST .*)\\n");
+
+  /**
+   * Whether two versions of a part do the same steps. The pure ones, reads of parameters, fields
+   * and constants, may sit in another order, as long as every call is still given the same
+   * expressions in the same places: swapping two arguments is a change, even when both are reads.
+   */
+  static boolean sameSteps(Part before, Part after) {
+    if (before.text().equals(after.text())) return true;
+    return Delta.steps(before.text()).equals(Delta.steps(after.text()))
+        && PURE.matcher(before.text()).replaceAll("").equals(PURE.matcher(after.text()).replaceAll(""))
+        && before.given().equals(after.given());
   }
 
   /**
@@ -366,8 +384,9 @@ final class PathChange {
   }
 
   /** The slices of a method; {@code locals} are the names of its locals, by slot, where known. */
-  static Slices slices(String owner, MethodNode mn, Map<Integer, String> locals, Predicate<AbstractInsnNode> toward) {
+  static Slices slices(String owner, MethodNode mn, Map<Integer, String> locals, Calls calls) {
     if (mn == null || mn.instructions.size() == 0) return Slices.NONE;
+    Predicate<AbstractInsnNode> toward = calls.toward();
     Map<AbstractInsnNode, Set<AbstractInsnNode>> next = new HashMap<>();
     Analyzer<Dep> analyzer = new Analyzer<>(new Deps()) {
       @Override
@@ -381,7 +400,7 @@ final class PathChange {
       frames = analyzer.analyze(owner, mn);
       sources = new Analyzer<>(new SourceInterpreter()).analyze(owner, mn);
     } catch (AnalyzerException e) {
-      Part unknown = new Part("?", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false);
+      Part unknown = new Part("?", Set.of(), List.of(), Ops.NONE, Map.of(), Map.of(), Map.of(), Set.of(), false, List.of());
       return new Slices(unknown, unknown, false, Set.of(), Set.of());
     }
     List<AbstractInsnNode> targets = new ArrayList<>();
@@ -401,10 +420,16 @@ final class PathChange {
       }
       data.add(t);
     }
+    // Only what is done to those objects before the last call toward the effect: what happens to
+    // them afterwards (mapping the saved entity to a response) is not what was written.
+    int last = mn.instructions.indexOf(targets.get(targets.size() - 1));
     for (AbstractInsnNode insn : mn.instructions) {
       if (!(insn instanceof MethodInsnNode) && insn.getOpcode() != Opcodes.PUTFIELD) continue;
-      Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
-      if (f == null || targets.contains(insn)) continue;
+      int at = mn.instructions.indexOf(insn);
+      Frame<Dep> f = frames[at];
+      if (f == null || targets.contains(insn) || at > last) continue;
+      // Reading from the object (a getter, toString) does nothing to it.
+      if (insn instanceof MethodInsnNode m && Type.getArgumentTypes(m.desc).length == 0 && Type.getReturnType(m.desc).getSort() != Type.VOID) continue;
       List<Dep> in = inputs(insn, f);
       if (in.stream().anyMatch(d -> d.origins.stream().anyMatch(objects::contains))) {
         data.add(insn);
@@ -419,7 +444,7 @@ final class PathChange {
       Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
       if (f == null) continue;
       Set<Boolean> outcomes = new HashSet<>();
-      for (AbstractInsnNode s : next.getOrDefault(insn, Set.of())) outcomes.add(reaches(s, targets, next, insn));
+      for (AbstractInsnNode s : next.getOrDefault(insn, Set.of())) outcomes.add(reaches(s, targets, next, insn, calls.stops()));
       if (outcomes.size() < 2) continue;
       checks.add(insn);
       for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
@@ -441,6 +466,7 @@ final class PathChange {
     Map<String, Integer> counts = new TreeMap<>();
     Map<String, String> fields = new TreeMap<>();
     Set<String> overloaded = new HashSet<>();
+    List<String> given = new ArrayList<>();
     boolean accessors = false;
     for (AbstractInsnNode insn : mn.instructions) {
       if (!insns.contains(insn)) continue;
@@ -451,6 +477,8 @@ final class PathChange {
       }
       if (insn instanceof MethodInsnNode m) {
         String name = m.name.equals("<init>") ? "new " + Behaviour.simple(m.owner) : Behaviour.simple(m.owner) + "." + m.name;
+        // Every call, with what each of its arguments is computed from, in program order.
+        given.add(name + m.desc + String.join("|", call(owner, mn, locals, m, frames, sources).code()));
         if (core(m.owner)) {
           if (!asWritten(m)) means.add(name);
           continue;
@@ -471,7 +499,9 @@ final class PathChange {
       }
     }
     overloaded.forEach(calls::remove);
-    return new Part(text(mn, insns), names, values(mn, insns), Ops.of(insns), calls, counts, fields, means, accessors);
+    // Calls may move past one another (a value put in a local first); which expression each is given may not.
+    java.util.Collections.sort(given);
+    return new Part(text(mn, insns), names, values(mn, insns), Ops.of(insns), calls, counts, fields, means, accessors, given);
   }
 
   /** A field as a reader would name it: by itself in its own class, with its class elsewhere. */
@@ -559,14 +589,16 @@ final class PathChange {
     return null;
   }
 
+  /** Whether a target can be reached from here without passing the branch again; a call that never returns ends the path. */
   private static boolean reaches(AbstractInsnNode from, List<AbstractInsnNode> targets,
-      Map<AbstractInsnNode, Set<AbstractInsnNode>> next, AbstractInsnNode branch) {
+      Map<AbstractInsnNode, Set<AbstractInsnNode>> next, AbstractInsnNode branch, Predicate<AbstractInsnNode> stops) {
     Set<AbstractInsnNode> seen = new HashSet<>(Set.of(branch));
     List<AbstractInsnNode> work = new ArrayList<>(List.of(from));
     while (!work.isEmpty()) {
       AbstractInsnNode n = work.remove(work.size() - 1);
       if (!seen.add(n)) continue;
       if (targets.contains(n)) return true;
+      if (stops.test(n)) continue;
       work.addAll(next.getOrDefault(n, Set.of()));
     }
     return false;
@@ -609,6 +641,7 @@ final class PathChange {
   }
 
   private static final Pattern LOCAL = Pattern.compile("(LOAD|STORE|IINC) (\\d+)");
+  private static final Pattern PLUMBING = Pattern.compile("(?m)^[ILFDA](?:LOAD|STORE) v\\d+\\n");
   private static final Pattern LAMBDA = Pattern.compile("lambda\\$([\\w$]*?)\\$\\d+");
   private static final Pattern PACKAGE = Pattern.compile("(?:[a-z_][\\w$]*/)+(?=[A-Za-z_$])");
   private static final Pattern INVOKE = Pattern.compile("^INVOKE(VIRTUAL|SPECIAL|INTERFACE)");
@@ -649,6 +682,10 @@ final class PathChange {
       m.appendReplacement(out, Matcher.quoteReplacement(m.group(1) + " " + name));
     }
     m.appendTail(out);
+    // A local is a name for a value, not a step: putting a value in one, or passing it through a
+    // second, changes nothing about what reaches the effect. Parameters stay, since which one is
+    // passed is the point.
+    out = new StringBuilder(PLUMBING.matcher(out).replaceAll(""));
     // A class is known by its simple name: a library that moved a class to another package, or a
     // class of the program that moved, has not changed what the method does.
     String plain = HANDLE.matcher(LAMBDA.matcher(out).replaceAll("lambda\\$$1\\$")).replaceAll("handle kind INVOKE");
@@ -740,6 +777,15 @@ final class PathChange {
     return t.getSort() == Type.OBJECT || t.getSort() == Type.ARRAY;
   }
 
+  /**
+   * Whether work can be done on a value of this type before it is handed on: an object, but not
+   * a string or a box, which cannot change, so a call made on one earlier is not work on the
+   * data going into an effect.
+   */
+  private static boolean identity(Type t) {
+    return isRef(t) && !plainValue(t);
+  }
+
   private static final class Deps extends Interpreter<Dep> {
     private final SourceInterpreter sizes = new SourceInterpreter();
     private int params;
@@ -765,7 +811,7 @@ final class PathChange {
       // Each parameter is an object of its own: work done on it is work done on what was passed in.
       // A number or a flag has no identity: passing the same one to two calls joins nothing.
       Object me = "param" + (params++);
-      return new Dep(type.getSize(), Set.of(), isRef(type) ? Set.of(me) : Set.of());
+      return new Dep(type.getSize(), Set.of(), identity(type) ? Set.of(me) : Set.of());
     }
 
     @Override
@@ -773,8 +819,8 @@ final class PathChange {
       int size = sizes.newOperation(insn).getSize();
       boolean ref = switch (insn.getOpcode()) {
         case Opcodes.ACONST_NULL, Opcodes.NEW -> true;
-        case Opcodes.LDC -> !(((org.objectweb.asm.tree.LdcInsnNode) insn).cst instanceof Number);
-        case Opcodes.GETSTATIC -> isRef(Type.getType(((FieldInsnNode) insn).desc));
+        case Opcodes.LDC -> ((org.objectweb.asm.tree.LdcInsnNode) insn).cst instanceof Type;
+        case Opcodes.GETSTATIC -> identity(Type.getType(((FieldInsnNode) insn).desc));
         default -> false;
       };
       return new Dep(size, Set.of(insn), ref ? Set.of(insn) : Set.of());
@@ -789,7 +835,7 @@ final class PathChange {
     public Dep unaryOperation(AbstractInsnNode insn, Dep value) {
       SourceValue s = sizes.unaryOperation(insn, new SourceValue(value.size));
       boolean ref = switch (insn.getOpcode()) {
-        case Opcodes.GETFIELD -> isRef(Type.getType(((FieldInsnNode) insn).desc));
+        case Opcodes.GETFIELD -> identity(Type.getType(((FieldInsnNode) insn).desc));
         case Opcodes.NEWARRAY, Opcodes.ANEWARRAY -> true;
         default -> false;
       };
@@ -820,8 +866,8 @@ final class PathChange {
       SourceValue s = sizes.naryOperation(insn, in);
       Set<AbstractInsnNode> d = new HashSet<>(Set.of(insn));
       for (Dep v : values) d.addAll(v.deps);
-      boolean ref = insn instanceof MethodInsnNode m ? isRef(Type.getReturnType(m.desc))
-          : insn instanceof InvokeDynamicInsnNode i ? isRef(Type.getReturnType(i.desc))
+      boolean ref = insn instanceof MethodInsnNode m ? identity(Type.getReturnType(m.desc))
+          : insn instanceof InvokeDynamicInsnNode i ? identity(Type.getReturnType(i.desc))
           : insn.getOpcode() == Opcodes.MULTIANEWARRAY;
       return new Dep(s.getSize(), d, ref ? Set.of(insn) : Set.of());
     }

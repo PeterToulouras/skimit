@@ -55,6 +55,22 @@ class AnalysisTest {
   }
 
   @Test
+  void aSpringDataFragmentImplementationIsReachedThroughTheRepository() throws IOException {
+    Analysis a = Compiler.analyze(LEDGER,
+        "package org.springframework.data.repository; public interface Repository<T, I> { }",
+        "public interface PetRepository { void delete(long id); }",
+        "public interface PetRepositoryOverride { void delete(long id); }",
+        "public interface SpringDataPetRepository extends org.springframework.data.repository.Repository<Object, Long>, PetRepository, PetRepositoryOverride { }",
+        "public class SpringDataPetRepositoryImpl implements PetRepositoryOverride { Ledger l; public void delete(long id) { l.post(id); } }",
+        "public class Spare implements PetRepositoryOverride { public void delete(long id) { } }",
+        "public class Clinic { PetRepository pets; void remove(long id) { pets.delete(id); } }");
+    // The class Spring Data would wire in by its name is on the way; a class with another name is not.
+    assertEquals(List.of("Clinic.remove", "SpringDataPetRepositoryImpl.delete"), causes(a, "Clinic", "remove").get("deletes Pet"));
+    assertTrue(reaches(a, "SpringDataPetRepositoryImpl", "delete"));
+    assertFalse(reaches(a, "Spare", "delete"));
+  }
+
+  @Test
   void lambdaOfAnApplicationInterfaceIsCalledWhereTheInterfaceIsCalled() throws IOException {
     Analysis a = Compiler.analyze(LEDGER,
         "public interface Route { void handle(); }",
