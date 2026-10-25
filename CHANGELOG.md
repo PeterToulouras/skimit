@@ -30,10 +30,11 @@ Found by reading 60 replayed commits against what skimit said about them (the ta
 - **Renamed fields are read by their old names**, as renamed methods and moved classes are. A
   commit that renamed every `xxlJobInfoDao` field to `xxlJobInfoMapper` said 39 lines; it says
   none. Several fields of one type renamed together, such as three enum constants with a typo
-  fixed, pair by the names they are closest to.
-- **An anonymous class renumbered by an insertion is the same class.** javac numbers them per
-  top-level class, so a new one inserted earlier used to make the next one "new on the way to"
-  an effect.
+  fixed, pair by the names they are closest to, and a getter renamed along with its field is the
+  same method.
+- **An anonymous class renumbered by an insertion is the same class**, also when it gained a
+  method. javac numbers them per top-level class, so a new one inserted earlier used to make the
+  next one "new on the way to" an effect.
 - **Only what is done to an object before the write is its data**, and reading from it is not
   doing anything to it: mapping the saved entity to a response, or a getter in a log line, no
   longer says the write has different data.

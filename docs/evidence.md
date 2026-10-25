@@ -43,8 +43,8 @@ its parent, and runs `skimit diff` between the two. 758 commits were tried; 183 
 - **It fits on a screen.** Of the 211 commits that had something to say, the median said 2 lines
   and 180 (85%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move of its
   portal to a new version of its API, said 106, broadest first.
-- **Bug fixes.** 157 of the commits say they fix something. 64 of them changed behaviour by
-  skimit's account (62 how, 2 what). The other 93 changed nothing a way in does: error messages,
+- **Bug fixes** (measured under 0.2.2). 157 of the commits say they fix something. 64 of them
+  changed behaviour by skimit's account (62 how, 2 what). The other 93 changed nothing a way in does: error messages,
   display, logging, configuration, read paths, typos. A fix in a read path is a real fix with no
   effect to report, since reads are not effects.
 
@@ -76,7 +76,9 @@ must be one the map says can cause it, and each other method one the map has a p
 | JHipster sample app | 216 | 240 | 12 | 0 |
 | Apollo | 1,404 | 1,434 | 42 | 0 |
 
-No run did anything the map says it cannot. In Apollo, 15 effects were caused by tests that call
+No run did anything the map says it cannot. Spring PetClinic and PetClinic REST were run again
+under 0.2.3 by the `measure` workflow, with the same result (the outputs are in
+`experiments/2026-10/verify-0.2.3`). In Apollo, 15 effects were caused by tests that call
 a private method through reflection; `verify` lists them apart, since the map does not follow
 reflection. Getting here took two changes to the agent, both found by this check: it records only
 the first effect on a call, as the map does (a repository's save and the `EntityManager` call

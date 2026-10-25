@@ -138,6 +138,11 @@ class DifferTest {
     Differ e = diff(new String[] {LEDGER, books},
         new String[] {LEDGER, books.replace("Ledger lgr;", "Ledger ledger;").replace("lgr.post", "ledger.post").replace("Ledger adt;", "Ledger audit;").replace("adt.post", "audit.post")});
     assertTrue(e.changes.isEmpty(), e.changes.toString());
+    // A getter renamed along with its field, and the calls to it.
+    String getter = "public class Books { Ledger lgr; Ledger getLgr() { return lgr; } void a(long c) { getLgr().post(c); } }";
+    Differ f = diff(new String[] {LEDGER, getter},
+        new String[] {LEDGER, getter.replace("Ledger lgr;", "Ledger ledger;").replace("return lgr", "return ledger").replace("getLgr", "getLedger")});
+    assertTrue(f.changes.isEmpty(), f.changes.toString());
   }
 
   @Test
@@ -154,6 +159,12 @@ class DifferTest {
     assertEquals("Pool$2", d.renames.map.get("Pool$3"));
     assertEquals(List.of("Pool$2.<init>:added", "Pool$2.run:added", "Pool.start:changed"),
         d.changes.stream().map(c -> c.method().owner() + "." + c.method().name() + ":" + c.kind()).sorted().toList());
+    // Still the same class when it also gained a method.
+    String grown = after.replace("l.post(2); } }; b.run();", "l.post(2); } public String toString() { return \"b\"; } }; b.run();");
+    Differ e = diff(new String[] {LEDGER, before}, new String[] {LEDGER, grown});
+    assertEquals("Pool$2", e.renames.map.get("Pool$3"));
+    assertEquals(List.of("Pool$2.<init>:added", "Pool$2.run:added", "Pool$3.toString:added", "Pool.start:changed"),
+        e.changes.stream().map(c -> c.method().owner() + "." + c.method().name() + ":" + c.kind()).sorted().toList());
   }
 
   @Test

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.BiPredicate;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
@@ -39,9 +40,10 @@ public final class Differ {
     BiPredicate<MethodKey, MethodKey> alike = (b, h) -> base.hashes.get(b).equals(head.hashes.get(h))
         || classes.any() && base.hashes.get(b).equals(head.graph.bodyHash(h, classes));
     Map<MethodKey, MethodKey> earlier = counterparts(base, head, classes, alike);
-    methodRenames.putAll(renamedMethods(base, head, classes, earlier));
-    earlier.putAll(methodRenames);
     fieldRenames.putAll(renamedFields(base, head, classes));
+    // Fields first: a getter renamed along with its field has the same body once the field is read by its old name.
+    methodRenames.putAll(renamedMethods(base, head, new Renames(classes.map, Map.of(), fieldRenames), earlier));
+    earlier.putAll(methodRenames);
     // A method whose only edit is a method's or a field's new name is read with the old one, so it did not change.
     renames = new Renames(classes.map, methodRenames, fieldRenames);
     BiPredicate<MethodKey, MethodKey> sameBody = (b, h) -> base.hashes.get(b).equals(head.hashes.get(h))
@@ -300,29 +302,32 @@ public final class Differ {
    * that class under a new number, however the number it now carries was used before.
    */
   private static void anonymous(Analysis base, Analysis head, Map<String, String> out) {
-    Map<String, Map<String, List<String>>> before = new HashMap<>();
+    Map<String, List<String>> before = new HashMap<>();
     for (String cls : base.graph.program.classes.keySet()) {
-      if (ANONYMOUS.matcher(cls).matches()) {
-        before.computeIfAbsent(CallGraph.topLevel(cls), k -> new HashMap<>()).computeIfAbsent(shape(base, cls), k -> new ArrayList<>()).add(cls);
-      }
+      if (ANONYMOUS.matcher(cls).matches()) before.computeIfAbsent(CallGraph.topLevel(cls), k -> new ArrayList<>()).add(cls);
     }
     Set<String> taken = new HashSet<>(out.values());
     for (String cls : head.graph.program.classes.keySet()) {
       if (!ANONYMOUS.matcher(cls).matches() || out.containsKey(cls)) continue;
-      List<String> was = before.getOrDefault(CallGraph.topLevel(cls), Map.of()).get(shape(head, cls));
-      if (was != null && was.size() == 1 && !was.get(0).equals(cls) && taken.add(was.get(0))) out.put(cls, was.get(0));
+      Set<String> now = shape(head, cls);
+      // The class it was: every method it had then is still there, body for body (it may have gained one), and no other class fits.
+      List<String> fits = new ArrayList<>();
+      for (String was : before.getOrDefault(CallGraph.topLevel(cls), List.of())) {
+        Set<String> then = shape(base, was);
+        if (then.stream().anyMatch(s -> !s.startsWith("<")) && now.containsAll(then)) fits.add(was);
+      }
+      if (fits.size() == 1 && !fits.get(0).equals(cls) && taken.add(fits.get(0))) out.put(cls, fits.get(0));
     }
   }
 
   /** The methods of a class and their bodies, with the class's own name read as a stand-in, so two numberings compare equal. */
-  private static String shape(Analysis a, String cls) {
+  private static Set<String> shape(Analysis a, String cls) {
     Renames self = new Renames(Map.of(cls, "$self"), Map.of());
-    List<String> parts = new ArrayList<>();
+    Set<String> parts = new TreeSet<>();
     for (MethodKey m : a.hashes.keySet()) {
       if (m.owner().equals(cls)) parts.add(m.name() + self.apply(m.desc()) + "=" + a.graph.bodyHash(m, self));
     }
-    java.util.Collections.sort(parts);
-    return String.join("\n", parts);
+    return parts;
   }
 
   /** Every method, grouped under the top-level class it belongs to. */

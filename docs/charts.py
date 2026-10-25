@@ -65,7 +65,7 @@ def wrap(w, h, body, title):
 
 def replay(t):
     w, left, bw = 780, 250, 520
-    keys = [("none", "No change in behaviour"), ("how", "How it does it"), ("what", "What it can do")]
+    keys = [("none", "No change to what a way in does"), ("how", "How it does it"), ("what", "What it can do")]
     body = legend(left, 18, keys, t)
     y = 44
     for name, sub, counts in REPLAY:
