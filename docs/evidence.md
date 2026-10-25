@@ -170,6 +170,11 @@ commit and what 0.2.3 says on the same one, is
 - **Seventeen were what a reviewer needed**, among them every security fix in the sample: four
   permission checks added, two XSS fixes, two IDOR fixes, and a validation moved into a generated
   API, which reads as the explicit check being gone.
+- **A second, blind reading agrees on 48 of the 60** (52 of 60 on whether skimit was useful),
+  and is the stricter of the two: it counts nine silent commits as missed, not six, adding a new
+  URL mapping, a configured log path and a session flag. It is a separate Claude session given
+  only the diffs, not a person; the table shows both verdicts and the second reader's reason
+  wherever they differ.
 
 ## The security fixes, again
 
