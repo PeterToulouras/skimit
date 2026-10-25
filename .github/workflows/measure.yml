@@ -10,13 +10,42 @@ on:
         description: Replay only these projects (comma-separated); empty for all
         required: false
         default: ''
+      classes:
+        description: "owner/name sha: build that commit and its parent and upload their classes, instead of measuring"
+        required: false
+        default: ''
   push:
     branches: ['measure/**']
     paths-ignore: ['.github/workflows/**']
 permissions:
   contents: read
 jobs:
+  classes:
+    if: inputs.classes != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 21, cache: maven }
+      - run: |
+          read -r repo sha <<< "${{ inputs.classes }}"
+          git clone -q "https://github.com/$repo.git" project
+          for side in base head; do
+            rev="$sha"; [ "$side" = base ] && rev="$sha^"
+            git -C project checkout -q "$rev" && git -C project clean -qfdx
+            (cd project && mvn -q -B -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true compile)
+            n=0
+            while IFS= read -r d; do n=$((n + 1)); mkdir -p "out/$side"; cp -r "$d" "out/$side/$n"; done < <(
+              find project -type d \( -path '*/target/classes' -o -path '*/build/classes/java/main' \) -not -path '*/node_modules/*' | sort)
+            echo "$side: $n class directories"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: classes
+          path: out
+
   skimit:
+    if: inputs.classes == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
