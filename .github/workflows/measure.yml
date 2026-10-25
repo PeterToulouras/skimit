@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/setup-java@v6
-        with: { distribution: temurin, java-version: 21, cache: maven }
+        with: { distribution: temurin, java-version: 21 }
       - run: |
           read -r repo sha <<< "${{ inputs.classes }}"
           git clone -q "https://github.com/$repo.git" project
