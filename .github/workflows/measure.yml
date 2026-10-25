@@ -32,7 +32,6 @@ jobs:
 
   replay:
     needs: skimit
-    if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -53,14 +52,19 @@ jobs:
           - { project: apollo, repo: apolloconfig/apollo, rev: 42d4d827eb, count: 77, build: bash $GITHUB_WORKSPACE/experiments/2026-10/apollo-build.sh }
     steps:
       - uses: actions/checkout@v7
+        if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
       - uses: actions/setup-java@v6
+        if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
         with: { distribution: temurin, java-version: 21, cache: maven }
       - uses: actions/download-artifact@v7
+        if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
         with: { name: skimit-jars, path: jars }
-      - run: |
+      - if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+        run: |
           git clone -q https://github.com/${{ matrix.repo }}.git "$RUNNER_TEMP/project"
           git -C "$RUNNER_TEMP/project" checkout -q ${{ matrix.rev }}
-      - env:
+      - if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
+        env:
           SKIMIT_JAR: ${{ github.workspace }}/jars/skimit-analyzer/target/skimit.jar
           REPLAY_WORK: ${{ runner.temp }}/replay
           REPLAY_TIMEOUT: '900'
@@ -70,7 +74,7 @@ jobs:
           else scripts/replay.sh "$RUNNER_TEMP/project" - ${{ matrix.count }}; fi
           python3 scripts/feed.py "$REPLAY_WORK" > "$REPLAY_WORK/feed.jsonl"
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && (inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project)))
         with:
           name: replay-${{ matrix.project }}
           path: |
