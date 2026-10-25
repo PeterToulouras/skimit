@@ -40,6 +40,8 @@ public final class Feed {
     RENAMED_WAY_IN,
     /** A way in can no longer cause something. */
     LOSES,
+    /** Same effects, but a check that stood before one of them is gone: the first thing to know about how. */
+    CHECK_GONE,
     /** Same effects, but a change decides differently whether, or with what, data is deleted. */
     CHANGED_DELETE,
     /** Same effects, but a change decides differently whether, or with what, one of them happens. */
@@ -114,7 +116,7 @@ public final class Feed {
       }
       for (Effect x : lost) {
         lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.LOSES,
-            id + " no longer " + x + count(x, before, after)));
+            id + " no longer " + x + count(x, before, after) + blindSpot(head, id, changed)));
       }
       for (Effect x : e.getValue().keySet()) {
         if (gained.contains(x)) continue;
@@ -130,7 +132,8 @@ public final class Feed {
       if (stillThere.contains(e.getKey()) || base.entries.get(e.getKey()).kind().equals("uncalled")) continue;
       if (head.quiet.contains(e.getKey())) {
         for (Effect x : e.getValue().keySet()) {
-          lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.LOSES, e.getKey() + " no longer " + x + count(x, before, after)));
+          lines.add(new Line(x.verb().equals("deletes") ? Kind.DELETES : Kind.LOSES,
+              e.getKey() + " no longer " + x + count(x, before, after) + blindSpot(head, e.getKey(), changed)));
         }
         continue;
       }
@@ -148,8 +151,16 @@ public final class Feed {
       for (Map.Entry<Effect, Set<String>> fx : byEffect(e.getValue(), after).entrySet()) {
         Effect x = fx.getKey();
         String template;
+        String detail = null;
         if (old == null) {
           template = NEW_ON_THE_WAY + EFFECT;
+        } else if (head.effectFor(m) != null) {
+          // The walk stops at the effect, but what the effect's own code does can change too.
+          PathChange.Body then = PathChange.body(was.owner(), old, locals(base, was));
+          PathChange.Body here = PathChange.body(m.owner(), now, locals(head, m));
+          if (then.text().equals(here.text())) continue;
+          template = "the code that " + EFFECT + " changed";
+          detail = bodyDetail(then, here);
         } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
           template = EFFECT + ", through a method that changed and is too long to compare";
         } else {
@@ -161,6 +172,7 @@ public final class Feed {
         How h = how(hows, template, m);
         h.ways.addAll(fx.getValue());
         h.effects.add(x);
+        if (detail != null) h.details.put(m, detail);
         if (old == null) h.fresh.addAll(aka(head, m));
         // Nothing more to say from the slices, but the method itself takes or returns something else.
         String sig = old == null || !GENERIC.contains(template) ? null : PathChange.signature(was.desc(), m.desc());
@@ -240,6 +252,7 @@ public final class Feed {
   }
 
   private static final String NEW_ON_THE_WAY = "is new on the way to: ";
+  private static final String CHECK_GONE = "no longer checks ";
 
   /** The line for these words in this method, one per pair however many ways in and effects it covers. */
   private static How how(Map<String, How> hows, String template, MethodKey m) {
@@ -305,7 +318,9 @@ public final class Feed {
       String text = h.template.startsWith(NEW_ON_THE_WAY) ? names(h.methods) + " " + what
           : h.methods.isEmpty() ? what : what + " (in " + where(h) + ")";
       boolean deletes = h.effects.stream().anyMatch(x -> x.verb().equals("deletes"));
-      out.add(new Line(deletes ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + text, List.copyOf(h.methods)));
+      // A check that is gone, on the way or in a helper that decided it, outranks every other line about how.
+      boolean checkGone = h.template.contains(CHECK_GONE) || h.details.values().stream().anyMatch(d -> d.contains(CHECK_GONE));
+      out.add(new Line(checkGone ? Kind.CHECK_GONE : deletes ? Kind.CHANGED_DELETE : Kind.CHANGED_HOW, who + ": " + text, List.copyOf(h.methods)));
     }
     return out;
   }
@@ -336,7 +351,7 @@ public final class Feed {
       said.addAll(checks.newValues());
     }
     if (!checks.goneNames().isEmpty()) {
-      parts.add("no longer checks " + list(checks.goneNames()));
+      parts.add(CHECK_GONE + list(checks.goneNames()));
       said.addAll(checks.goneNames());
       said.addAll(checks.goneValues());
     }
@@ -518,7 +533,7 @@ public final class Feed {
     if (c.reach()) parts.add("now reaches " + x + " here");
     if (c.when()) {
       PathChange.Delta d = c.check();
-      if (!d.goneNames().isEmpty()) parts.add("no longer checks " + list(d.goneNames()) + " before it " + x);
+      if (!d.goneNames().isEmpty()) parts.add(CHECK_GONE + list(d.goneNames()) + " before it " + x);
       if (!d.newNames().isEmpty()) parts.add("new check before it " + x + ", on " + list(d.newNames()) + against(d.newValues()));
       if (d.newNames().isEmpty() && d.goneNames().isEmpty()) {
         List<String> said = new ArrayList<>();
@@ -582,6 +597,26 @@ public final class Feed {
     if (!d.goneMeans().isEmpty()) parts.add("no longer uses " + list(d.goneMeans()));
     if (parts.isEmpty() && d.reordered()) parts.add("the same steps in another order");
     return String.join(", ", parts);
+  }
+
+  /**
+   * Why a way in may only seem to have lost an effect: a method it runs now calls something by
+   * name (reflection, a method handle), past which the map cannot see. Empty when none does.
+   */
+  private static String blindSpot(Behaviour head, String id, Set<MethodKey> changed) {
+    CallGraph g = head.analysis.graph;
+    for (MethodKey m : new TreeSet<>(head.runs.getOrDefault(id, Set.of()))) {
+      if (!changed.contains(m)) continue;
+      for (CallGraph.Node n : g.nodesOf.getOrDefault(m, List.of())) {
+        for (CallGraph.Node c : g.calleesOf(n)) {
+          if (Policy.byName(c.method())) {
+            return "; " + shortName(m) + " now calls " + Behaviour.simple(c.method().owner()) + "." + c.method().name()
+                + ", which skimit does not follow";
+          }
+        }
+      }
+    }
+    return "";
   }
 
   private static String targets(List<Effect> effects) {
@@ -741,6 +776,6 @@ public final class Feed {
 
   /** Lines about what a way in can do, as opposed to how it does something it already did; broken rules aside. */
   public long what() {
-    return lines.stream().filter(l -> l.kind() != Kind.BROKEN && l.kind().compareTo(Kind.CHANGED_DELETE) < 0).count();
+    return lines.stream().filter(l -> l.kind() != Kind.BROKEN && l.kind().compareTo(Kind.CHECK_GONE) < 0).count();
   }
 }

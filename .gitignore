@@ -5,3 +5,6 @@ build/
 *.iml
 .vscode/
 skimit.html
+.project
+.classpath
+.settings/

@@ -114,6 +114,20 @@ class DifferTest {
   }
 
   @Test
+  void aMethodRenamedWithTheSameBodyIsNotAChangeNorAreItsCallers() throws IOException {
+    Differ d = diff(new String[] {LEDGER, ORDERS, SHOP},
+        new String[] {LEDGER, ORDERS.replace("void place(long cents)", "void submit(long cents)"), SHOP.replace("o.place(5)", "o.submit(5)")});
+    assertTrue(d.changes.isEmpty(), d.changes.toString());
+    assertEquals("Orders#place(J)V", d.methodRenames.get(new MethodKey("Orders", "submit", "(J)V")).id());
+    // Two methods that happen to have the same body are not a rename of each other.
+    String twins = ORDERS.replace("public String label() { return \"orders\"; }", "public String label() { return \"orders\"; } public String name() { return \"orders\"; }");
+    Differ e = diff(new String[] {LEDGER, twins, SHOP},
+        new String[] {LEDGER, twins.replace("String label()", "String title()").replace("String name()", "String id()"), SHOP});
+    assertTrue(e.methodRenames.isEmpty(), e.methodRenames.toString());
+    assertEquals(4, e.changes.size(), e.changes.toString());
+  }
+
+  @Test
   void twoSmallClassesThatOnlyLookAlikeAreNotAMove() throws IOException {
     Differ d = diff(new String[] {LEDGER, "public class Alpha { }"}, new String[] {LEDGER, "public class Beta { }"});
     assertTrue(d.renames.map.isEmpty());

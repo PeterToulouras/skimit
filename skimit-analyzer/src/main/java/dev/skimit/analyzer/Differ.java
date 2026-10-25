@@ -23,16 +23,24 @@ public final class Differ {
   public record Change(MethodKey method, String kind, MethodKey was) {}
 
   public final List<Change> changes = new ArrayList<>();
-  /** Reads the names of moved classes after the change as the names they had before. */
+  /** Reads the names of moved classes and renamed methods after the change as the names they had before. */
   final Renames renames;
+  /** Each method renamed with its body kept, after the change, to what it was called before. */
+  public final Map<MethodKey, MethodKey> methodRenames = new TreeMap<>();
   /** For each change, the lines of the source diff that belong to it; filled by {@link #attach}. */
   public final Map<MethodKey, List<SourceDiff.Line>> lines = new HashMap<>();
 
   public Differ(Analysis base, Analysis head) {
-    renames = new Renames(renames(base, head));
+    Renames classes = new Renames(renames(base, head), Map.of());
+    BiPredicate<MethodKey, MethodKey> alike = (b, h) -> base.hashes.get(b).equals(head.hashes.get(h))
+        || classes.any() && base.hashes.get(b).equals(head.graph.bodyHash(h, classes));
+    Map<MethodKey, MethodKey> earlier = counterparts(base, head, classes, alike);
+    methodRenames.putAll(renamedMethods(base, head, classes, earlier));
+    earlier.putAll(methodRenames);
+    // A caller whose only edit is a method's new name is read with the old one, so it did not change.
+    renames = new Renames(classes.map, methodRenames);
     BiPredicate<MethodKey, MethodKey> sameBody = (b, h) -> base.hashes.get(b).equals(head.hashes.get(h))
-        || !renames.map.isEmpty() && base.hashes.get(b).equals(head.graph.bodyHash(h, renames));
-    Map<MethodKey, MethodKey> earlier = counterparts(base, head, renames, sameBody);
+        || renames.any() && base.hashes.get(b).equals(head.graph.bodyHash(h, renames));
     for (MethodKey m : head.methods()) {
       MethodKey b = earlier.get(m);
       if (b != null && sameBody.test(b, m)) continue;
@@ -42,29 +50,105 @@ public final class Differ {
     for (MethodKey m : base.methods()) if (!matched.contains(m)) changes.add(new Change(m, "removed", null));
   }
 
-  /** Rewrites the names that moved classes have after the change into the names they had before. */
+  /**
+   * Rewrites the names that moved classes and renamed methods have after the change into the
+   * names they had before. In a method's text a call reads {@code owner.name (desc)}, and a
+   * method handle {@code owner.name(desc)}; a class name is followed by its end, a nested class
+   * ($) or punctuation, never by more of a name.
+   */
   static final class Renames implements UnaryOperator<String> {
     /** Top-level class after the change, in internal form, to the class it was. */
     final Map<String, String> map;
+    private final Map<MethodKey, MethodKey> methods;
     private final Pattern names;
+    private final Pattern calls;
 
-    Renames(Map<String, String> map) {
+    Renames(Map<String, String> map, Map<MethodKey, MethodKey> methods) {
       this.map = map;
-      // A name is followed by its end, a nested class ($), or punctuation: never by more of a name.
+      this.methods = methods;
       names = map.isEmpty() ? null : Pattern.compile(map.keySet().stream()
           .sorted(java.util.Comparator.comparingInt(String::length).reversed().thenComparing(x -> x))
           .map(Pattern::quote).collect(java.util.stream.Collectors.joining("|", "(", ")(?![\\w/])")));
+      calls = methods.isEmpty() ? null : Pattern.compile(methods.keySet().stream()
+          .map(m -> Pattern.quote(m.owner() + "." + m.name()) + "(?= ?" + Pattern.quote(m.desc()) + ")")
+          .collect(java.util.stream.Collectors.joining("|", "(", ")")));
+    }
+
+    boolean any() {
+      return names != null || calls != null;
     }
 
     @Override
     public String apply(String text) {
-      if (names == null) return text;
-      return names.matcher(text).replaceAll(r -> Matcher.quoteReplacement(map.get(r.group(1))));
+      String s = text;
+      if (calls != null) {
+        s = calls.matcher(text).replaceAll(r -> {
+          String[] p = r.group(1).split("\\.(?=[^.]*$)", 2);
+          MethodKey was = call(p[0], p[1], text, r.end());
+          return Matcher.quoteReplacement(was == null ? r.group(1) : was.owner() + "." + was.name());
+        });
+      }
+      if (names == null) return s;
+      return names.matcher(s).replaceAll(r -> Matcher.quoteReplacement(map.get(r.group(1))));
+    }
+
+    /** The renamed method a matched call token stands for: the one of that owner and name whose descriptor follows. */
+    private MethodKey call(String owner, String name, String text, int end) {
+      for (Map.Entry<MethodKey, MethodKey> e : methods.entrySet()) {
+        MethodKey k = e.getKey();
+        if (k.owner().equals(owner) && k.name().equals(name) && text.startsWith(k.desc(), text.charAt(end) == ' ' ? end + 1 : end)) return e.getValue();
+      }
+      return null;
     }
 
     MethodKey back(MethodKey m) {
+      MethodKey renamed = methods.get(m);
+      if (renamed != null) return renamed;
       return names == null ? m : new MethodKey(apply(m.owner()), m.name(), apply(m.desc()));
     }
+  }
+
+  /**
+   * Methods renamed and nothing more: a method after the change that has no counterpart, paired
+   * with the one method of its class that existed only before it and has the same descriptor and
+   * the same body. Two methods that happen to share a body are left alone. A supertype that
+   * declares the new name where it declared the old one (an interface renamed along with its
+   * implementation) is renamed with it.
+   */
+  static Map<MethodKey, MethodKey> renamedMethods(Analysis base, Analysis head, Renames classes, Map<MethodKey, MethodKey> earlier) {
+    Set<MethodKey> taken = new HashSet<>(earlier.values());
+    Map<String, List<MethodKey>> gone = new HashMap<>();
+    Map<String, List<MethodKey>> fresh = new HashMap<>();
+    for (MethodKey m : base.methods()) {
+      if (!taken.contains(m) && plain(m)) gone.computeIfAbsent(m.owner() + "|" + m.desc() + "|" + base.hashes.get(m), k -> new ArrayList<>()).add(m);
+    }
+    for (MethodKey m : head.methods()) {
+      if (earlier.containsKey(m) || !plain(m)) continue;
+      MethodKey was = classes.back(m);
+      fresh.computeIfAbsent(was.owner() + "|" + was.desc() + "|" + head.graph.bodyHash(m, classes), k -> new ArrayList<>()).add(m);
+    }
+    Map<MethodKey, MethodKey> out = new TreeMap<>();
+    for (Map.Entry<String, List<MethodKey>> e : fresh.entrySet()) {
+      List<MethodKey> b = gone.get(e.getKey());
+      if (b != null && b.size() == 1 && e.getValue().size() == 1 && !b.get(0).name().equals(e.getValue().get(0).name())) {
+        out.put(e.getValue().get(0), b.get(0));
+      }
+    }
+    for (Map.Entry<MethodKey, MethodKey> e : new ArrayList<>(out.entrySet())) {
+      MethodKey h = e.getKey();
+      MethodKey b = e.getValue();
+      for (String t : head.graph.supertypesOf(h.owner())) {
+        MethodKey declared = new MethodKey(t, h.name(), h.desc());
+        MethodKey was = new MethodKey(classes.apply(t), b.name(), b.desc());
+        if (head.graph.methods.containsKey(declared) && base.graph.methods.containsKey(was)) out.put(declared, was);
+      }
+    }
+    return out;
+  }
+
+  /** An ordinary method: not a constructor, an initializer or a lambda body. */
+  private static boolean plain(MethodKey m) {
+    return !m.name().startsWith("<") && CallGraph.enclosing(m) == null;
   }
 
   /**
@@ -90,7 +174,7 @@ public final class Differ {
         int total = Math.max(hm.size(), bm.size());
         long common = bm.stream().filter(m -> hNames.contains(m.name())).count();
         if (common * 2 < total) continue;
-        Renames one = new Renames(Map.of(h, b));
+        Renames one = new Renames(Map.of(h, b), Map.of());
         Set<MethodKey> earlier = new HashSet<>(bm);
         int matched = 0;
         int plain = 0;

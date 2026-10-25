@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.3
+
+Found by injecting 25 known changes into the example shop and reading what skimit said
+(`scripts/recall.py`; the table is in `experiments/2026-10/recall/shop.md`).
+
+- **A check that is gone comes first among the lines about how.** "no longer checks
+  Permissions.canRefund before it writes MONEY" is the most dangerous line skimit can print, and
+  it sorted among the other changes to how, where seven lines would fold it away. It now comes
+  before every other line about how, as kind `CHECK_GONE` in the JSON; the counts of what and
+  how are unchanged.
+- **A change inside the effect's own code is a line.** The walk stops at the effect, so a change
+  in `Ledger.post` itself said "No change in behaviour." Now: "the code that writes MONEY via
+  Ledger changed (in Ledger.post: no longer uses ":")".
+- **A method renamed along with its callers is not a change**, as a moved class is not:
+  `PaymentService.charge` to `pay`, with the implementation and every caller updated, says
+  nothing. A supertype that declares the new name where it declared the old one is renamed with
+  it.
+- **A string or a box handed to another call first is not work done on the write.** A refund
+  sent to the account that had just been checked read "writes MONEY via Ledger now using
+  Permissions.canRefund"; it reads "Ledger.post now given user, not customer".
+- **A lost effect says when the map went blind.** A write moved behind reflection reads "POST
+  /refunds no longer writes MONEY via Ledger (2 → 1 ways in); RefundHandler.refund now calls
+  Method.invoke, which skimit does not follow".
+
+Of the 25 injected changes, all 15 that change behaviour are said (14 under 0.2.2) and 5 of the
+9 that change the code alone are silent (4 under 0.2.2). The replay over the 575 commits was not
+re-run for this release: lines about removed checks move up without changing the counts, and a
+changed repository implementation or a renamed method may add or remove a line about how.
+
 ## 0.2.2
 
 Lines about how an effect is done now say what changed in nearly every case, and changes that do

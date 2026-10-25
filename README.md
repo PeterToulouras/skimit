@@ -49,8 +49,8 @@ prints:
 
 - **Breaks a rule (never "GET *" writes *): GET /reports/sales writes MONEY via Ledger**
 - GET /reports/sales now writes MONEY via Ledger (2 → 3 ways in)
-- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 - POST /refunds: no longer checks Permissions.canRefund before it writes MONEY via Ledger (in RefundHandler.refund)
+- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 ```
 
 The same pull request also tidies a text helper. That changes nothing a route does, so it is not
@@ -126,6 +126,9 @@ Replayed over 575 real commits from nine open-source Java projects, with no conf
   no more than 7.
 - **Checked against six projects' test suites** (2,109 tests): no run did anything the map says
   it cannot.
+- **Checked against known changes**: of 25 edits injected into the example shop, every one of
+  the 15 that change behaviour is said, and 5 of the 9 that only change the code are silent. The
+  four that are not are listed, with what skimit said.
 
 Full numbers and how to re-run them: [docs/evidence.md](docs/evidence.md).
 

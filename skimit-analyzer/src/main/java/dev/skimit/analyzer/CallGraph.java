@@ -868,6 +868,19 @@ public final class CallGraph {
     callers.computeIfAbsent(to, k -> new LinkedHashSet<>()).add(from);
   }
 
+  /** The application classes and interfaces above a class, itself left out. */
+  public Set<String> supertypesOf(String owner) {
+    Set<String> out = new TreeSet<>();
+    Deque<String> work = new ArrayDeque<>(List.of(owner));
+    while (!work.isEmpty()) {
+      ClassNode cn = program.classes.get(work.poll());
+      if (cn == null) continue;
+      if (cn.superName != null && program.classes.containsKey(cn.superName) && out.add(cn.superName)) work.add(cn.superName);
+      for (String itf : cn.interfaces) if (program.classes.containsKey(itf) && out.add(itf)) work.add(itf);
+    }
+    return out;
+  }
+
   /** The application method a call would bind to, searching the owner and its supertypes. */
   MethodKey resolveUp(String owner, String name, String desc) {
     Deque<String> work = new ArrayDeque<>(List.of(owner));

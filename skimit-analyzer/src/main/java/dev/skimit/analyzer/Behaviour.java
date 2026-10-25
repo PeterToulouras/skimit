@@ -105,7 +105,8 @@ public final class Behaviour {
         if (threadsSeen.add(t.method())) work.add(Map.entry(threadEntry(t.method()), g.nodesOf.getOrDefault(t.method(), List.of(t))));
       }
       if (found.isEmpty()) {
-        if (!entry.kind().equals("uncalled")) quiet.add(entry.id());
+        // What it runs is kept, so that a change can say why it stopped causing something.
+        if (!entry.kind().equals("uncalled") && quiet.add(entry.id())) runs.put(entry.id(), seen);
         continue;
       }
       // Two methods can carry the same name (an override and its interface, two threads of one class).

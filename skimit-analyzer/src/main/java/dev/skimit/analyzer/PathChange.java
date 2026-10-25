@@ -740,6 +740,15 @@ final class PathChange {
     return t.getSort() == Type.OBJECT || t.getSort() == Type.ARRAY;
   }
 
+  /**
+   * Whether work can be done on a value of this type before it is handed on: an object, but not
+   * a string or a box, which cannot change, so a call made on one earlier is not work on the
+   * data going into an effect.
+   */
+  private static boolean identity(Type t) {
+    return isRef(t) && !plainValue(t);
+  }
+
   private static final class Deps extends Interpreter<Dep> {
     private final SourceInterpreter sizes = new SourceInterpreter();
     private int params;
@@ -765,7 +774,7 @@ final class PathChange {
       // Each parameter is an object of its own: work done on it is work done on what was passed in.
       // A number or a flag has no identity: passing the same one to two calls joins nothing.
       Object me = "param" + (params++);
-      return new Dep(type.getSize(), Set.of(), isRef(type) ? Set.of(me) : Set.of());
+      return new Dep(type.getSize(), Set.of(), identity(type) ? Set.of(me) : Set.of());
     }
 
     @Override
@@ -773,8 +782,8 @@ final class PathChange {
       int size = sizes.newOperation(insn).getSize();
       boolean ref = switch (insn.getOpcode()) {
         case Opcodes.ACONST_NULL, Opcodes.NEW -> true;
-        case Opcodes.LDC -> !(((org.objectweb.asm.tree.LdcInsnNode) insn).cst instanceof Number);
-        case Opcodes.GETSTATIC -> isRef(Type.getType(((FieldInsnNode) insn).desc));
+        case Opcodes.LDC -> ((org.objectweb.asm.tree.LdcInsnNode) insn).cst instanceof Type;
+        case Opcodes.GETSTATIC -> identity(Type.getType(((FieldInsnNode) insn).desc));
         default -> false;
       };
       return new Dep(size, Set.of(insn), ref ? Set.of(insn) : Set.of());
@@ -789,7 +798,7 @@ final class PathChange {
     public Dep unaryOperation(AbstractInsnNode insn, Dep value) {
       SourceValue s = sizes.unaryOperation(insn, new SourceValue(value.size));
       boolean ref = switch (insn.getOpcode()) {
-        case Opcodes.GETFIELD -> isRef(Type.getType(((FieldInsnNode) insn).desc));
+        case Opcodes.GETFIELD -> identity(Type.getType(((FieldInsnNode) insn).desc));
         case Opcodes.NEWARRAY, Opcodes.ANEWARRAY -> true;
         default -> false;
       };
@@ -820,8 +829,8 @@ final class PathChange {
       SourceValue s = sizes.naryOperation(insn, in);
       Set<AbstractInsnNode> d = new HashSet<>(Set.of(insn));
       for (Dep v : values) d.addAll(v.deps);
-      boolean ref = insn instanceof MethodInsnNode m ? isRef(Type.getReturnType(m.desc))
-          : insn instanceof InvokeDynamicInsnNode i ? isRef(Type.getReturnType(i.desc))
+      boolean ref = insn instanceof MethodInsnNode m ? identity(Type.getReturnType(m.desc))
+          : insn instanceof InvokeDynamicInsnNode i ? identity(Type.getReturnType(i.desc))
           : insn.getOpcode() == Opcodes.MULTIANEWARRAY;
       return new Dep(s.getSize(), d, ref ? Set.of(insn) : Set.of());
     }

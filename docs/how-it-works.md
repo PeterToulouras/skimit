@@ -79,6 +79,11 @@ are identical once the new name is read as the old one, and either two of them a
 methods or one name contains the other. Once paired, every method is compared with the method it
 was, and code elsewhere that only switched to the new name is not a change.
 
+A method renamed and nothing more is matched the same way: a method that exists only after the
+change is paired with the one method of its class that existed only before it and has the same
+signature and the same body; a supertype that declares the new name where it declared the old one
+is renamed with it. A caller whose only edit is the new name is not a change.
+
 **Which ways in are the same.** A way in keeps its name across the change, or keeps its method
 when the method moved with its class. A route renamed along with its method (`/jobinfo/remove` to
 `/jobinfo/delete`) is still the same way in when it is the only one of its kind that does exactly
@@ -87,7 +92,9 @@ only got a new name and path runs the same code, and says nothing more than that
 
 **What it can do.** For each way in, the effects after the change are compared with those before:
 an effect gained or lost is a line. A way in that was there before and caused nothing, and now
-causes something, gains it.
+causes something, gains it. A way in that lost an effect because a changed method on its way now
+calls through reflection or a method handle says so on the line, since the map cannot see past
+that call and the effect may well still happen.
 
 **How it does what it already did.** For each changed method that a way in runs on the way to an
 effect it already had, skimit slices the method twice, before and after, by data flow over its
@@ -95,8 +102,8 @@ bytecode:
 
 - the **data slice**: the instructions that compute the values going into the calls toward the
   effect, and anything else done to those objects beforehand (`pet.setOwner(owner)` before
-  `save(pet)`). Numbers and flags have no identity: passing the same id to two calls does not join
-  them.
+  `save(pet)`). Numbers, flags, strings and boxed values have no identity: passing the same id or
+  the same name to two calls does not join them, since nothing done to one can change it.
 - the **check slice**: the branches with a call toward the effect down one side only, and what
   they test.
 
@@ -129,8 +136,14 @@ new says so, and has no line of its own when the line about its caller names it.
 than 4,000 instructions are not sliced: a change in one, or in a method one of them calls on the
 way to an effect, is reported without detail.
 
+The effect's own code can change too, though the walk stops at it: a changed `Ledger.post` or
+repository `save` is a line of its own, "the code that writes Order changed", with what changed in
+it in the same terms.
+
 Lines with the same words are merged across ways in and across methods, so thirty helpers behind
 one write that changed alike are one line; when a few changed in different ways, each says how.
+A check that is gone, on the way to an effect or in a helper that decided it, comes before every
+other line about how.
 
 **Rules.** The never and only rules are checked on the map before and after the change, and a
 breach that is new is a line; a review rule flags a way in that gains a matching effect. See

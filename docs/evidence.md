@@ -86,6 +86,55 @@ an endpoint through MockMvc is not on the way to what the endpoint does).
 A clean result covers what the tests exercised and no more. Expect a framework skimit has not met
 to show up here first, and run `skimit verify` on your own tests to find out.
 
+## Known changes, injected
+
+The replay says how much skimit says; it cannot say whether what it says is right, since nobody
+knows what each of those commits really did. `scripts/recall.py` asks the other question: given a
+change whose meaning is known, does skimit say something, and does it stay silent when nothing
+changed? It applies 25 edits to the example shop, written before any result was seen, compiles each
+and compares it with the shop as it was. The table is in
+[experiments/2026-10/recall/shop.md](../experiments/2026-10/recall/shop.md); with skimit 0.2.3:
+
+| Edits | Said | Silent |
+|---|---:|---:|
+| 15 that change what a way in does, or how | 15 | 0 |
+| 9 that change the code and nothing else | 4 | 5 |
+| 1 in a read path, left out by design | 0 | 1 |
+
+- **Every change to behaviour is said**, and in the words a reader needs: a removed permission
+  check, a check inverted, a report route that starts moving money and the rule it breaks, a new
+  route, a lost write, a doubled price, a refund that charges, a refund sent to the wrong account
+  ("Ledger.post now given user, not customer"), a new check with its threshold, a widened
+  permission in a helper, a call out, a second charge, and a change inside the ledger's own code.
+  The write moved behind reflection reads as lost, which is what the map sees, and the line says
+  why: "RefundHandler.refund now calls Method.invoke, which skimit does not follow".
+- **Four refactorings produce a line about how.** Extracting the charge into a private helper,
+  adding an unused parameter, swapping the two factors of a product, and replacing a field with a
+  local each say the write is done differently. None of them is, so these are the lines a reader
+  learns to skip; the 29% of commits that "changed only how" in the replay includes some of this
+  kind. Renaming a method, moving a class, renaming a local, reformatting and adding a log line
+  are silent.
+- **The first run of this table, under 0.2.2, found the gaps that 0.2.3 closed**: the change
+  inside the effect was missed, the wrong-account refund named the permission check instead of
+  the account, the reflection line gave no reason, and the method rename produced a line. The
+  changes are in the [changelog](../CHANGELOG.md).
+
+## The security fixes, again
+
+The [0.1 experiment](experiment.md#security-fixes) picked 21 commits from these histories that fix
+a vulnerability. Fifteen of them build and fall inside the replay. Under 0.2.2, with no rules set,
+11 produced only lines about how, and 4 said "No change in behaviour." Of those four, two fix
+reads, which are not effects; one changed a sample module outside the code analysed; and one,
+XXL-JOB's second commit tightening its job and log API, changed a scheduling helper that 0.1 had
+put in "should review" and 0.2 does not mention.
+
+The eleven are the reason a check that is gone now comes first. In the fix for CVE-2024-42681 the
+line that mattered, "/user/remove: no longer checks HttpServletRequest.getAttribute before it
+deletes XxlJobUser; new check before it deletes XxlJobUser, on PermissionInterceptor.getLoginUser",
+sat among 13 lines about how, where seven lines fold the rest away. Without a rule, a security fix
+reads like any other change to how an effect happens; with a `review` rule on the effects that
+matter, or a `never` rule, it is the first line and the job can fail on it.
+
 ## Re-run it
 
 ```
@@ -93,6 +142,9 @@ git clone https://github.com/PeterToulouras/skimit && cd skimit && mvn -q packag
 
 # what each commit did, for a project's last 100 commits
 scripts/replay.sh path/to/project - 100
+
+# known changes injected into the example shop
+scripts/recall.py
 
 # the map against a real run
 java -jar skimit-analyzer/target/skimit.jar map target/classes target/test-classes --agent-config agent.conf

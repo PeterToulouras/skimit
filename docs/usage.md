@@ -44,8 +44,8 @@ java -jar skimit.jar diff --base base/target/classes --head head/target/classes
 
 - **Breaks a rule (never "GET *" writes *): GET /reports/sales writes MONEY via Ledger**
 - GET /reports/sales now writes MONEY via Ledger (2 → 3 ways in)
-- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 - POST /refunds: no longer checks Permissions.canRefund before it writes MONEY via Ledger (in RefundHandler.refund)
+- POST /checkout: writes MONEY via Ledger with different data (in PriceCalculator.total: now checks Order.quantity against 10; now uses 90 and 100)
 ```
 
 The first sentence is the answer. Then come the lines, in this order:
@@ -57,8 +57,9 @@ The first sentence is the answer. Then come the lines, in this order:
 | now writes, calls, sends | A way in gains an effect. |
 | New way in, Removed | A route, job or listener that causes something appeared or went. |
 | is now | A way in answers to a new name and does the same things. |
-| no longer writes, calls, sends | A way in lost an effect. |
-| how | Same effects, done differently: a new or removed check before an effect, different data going into it, or a new call on the way to it, with the method where that happened and what changed there. |
+| no longer writes, calls, sends | A way in lost an effect. When a changed method on its way now calls through reflection, the line says so: the map cannot see past that. |
+| no longer checks | A check that stood before an effect is gone. This comes first among the lines about how, since it is the one most worth a look. |
+| how | Same effects, done differently: a new check before an effect, different data going into it, a new call on the way to it, or a change in the effect's own code, with the method where that happened and what changed there. |
 
 Seven lines are shown; the rest fold away. Code that nothing calls is not a way in, so a service
 written before its route says nothing until the route exists. A change that does none of these

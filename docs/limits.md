@@ -25,9 +25,16 @@ bite on your code.
   names, as Maven and Gradle builds do unless told otherwise.
 - **Dispatch the call graph cannot follow.** Reflection, method handles, `ServiceLoader`, and
   calls named in strings other than annotation expressions are not followed. An effect reached
-  only that way is missing from the way in that causes it; `skimit verify` lists what a run did
-  through reflection apart from its misses. Spring events are the exception: an event listener is
-  a way in of its own.
+  only that way is missing from the way in that causes it; a change that moves an effect behind
+  such a call says so on its line, and `skimit verify` lists what a run did through reflection
+  apart from its misses. Spring events are the exception: an event listener is a way in of its
+  own.
+- **Refactorings the slices read as change.** Extracting the call to an effect into a private
+  helper, replacing a field with a local made on the spot, adding a parameter the callee never
+  uses, and swapping the operands of a product each produce a line about how, because the
+  instructions feeding the effect differ even though what reaches it does not. Renamed methods,
+  moved classes, renamed locals, reordered code and added logging do not. The
+  [recall table](evidence.md#known-changes-injected) lists each case with what skimit said.
 - **Clients built an unusual way.** An interface a library turns into a client is recognised when
   it is declared as one, or handed to a factory call whose result is cast to it. Other ways of
   building a client make its calls look like calls to an interface with no implementation, which

@@ -1,0 +1,256 @@
+[
+ {
+  "id": "owner_delete_without_lookup_check",
+  "kind": "behaviour",
+  "says": "an owner is deleted without first checking it exists",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        if (owner == null) {\n            return new ResponseEntity<>(HttpStatus.NOT_FOUND);\n        }\n        this.clinicService.deleteOwner(owner);\n",
+    "        this.clinicService.deleteOwner(owner);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "get_pet_deletes",
+  "kind": "behaviour",
+  "says": "reading a pet deletes it",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetRestControllerV1.java",
+    "        PetDto pet = petMapper.toPetDto(this.clinicService.findPetById(petId));\n",
+    "        PetDto pet = petMapper.toPetDto(this.clinicService.findPetById(petId));\n        this.clinicService.deletePet(this.clinicService.findPetById(petId));\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "update_pet_keeps_old_type",
+  "kind": "behaviour",
+  "says": "updating a pet no longer changes its type",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetRestControllerV1.java",
+    "        currentPet.setType(petMapper.toPetType(petDto.getType()));\n",
+    ""
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "save_pet_without_type_lookup",
+  "kind": "behaviour",
+  "says": "a pet is saved with the type as sent, not the one on record",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "        pet.setType(findPetTypeById(pet.getType().getId()));\n",
+    ""
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "delete_owner_deletes_pets",
+  "kind": "behaviour",
+  "says": "deleting an owner now deletes their pets",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "        ownerRepository.delete(owner);\n",
+    "        for (Pet pet : owner.getPets()) {\n            petRepository.delete(pet);\n        }\n        ownerRepository.delete(owner);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "save_owner_twice",
+  "kind": "behaviour",
+  "says": "an owner is saved twice",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "        ownerRepository.save(owner);\n",
+    "        ownerRepository.save(owner);\n        ownerRepository.save(owner);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "visit_needs_existing_pet",
+  "kind": "behaviour",
+  "says": "a visit is refused for a pet that does not exist",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        visit.setPet(pet);\n        this.clinicService.saveVisit(visit);\n",
+    "        visit.setPet(pet);\n        if (this.clinicService.findPetById(petId) == null) {\n            return new ResponseEntity<>(HttpStatus.NOT_FOUND);\n        }\n        this.clinicService.saveVisit(visit);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "owner_update_drops_telephone",
+  "kind": "behaviour",
+  "says": "updating an owner no longer stores the telephone",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        currentOwner.setTelephone(ownerFieldsDto.getTelephone());\n",
+    ""
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "jpa_save_always_merges",
+  "kind": "behaviour",
+  "says": "the JPA repository merges every owner instead of persisting new ones",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/repository/jpa/JpaOwnerRepositoryImpl.java",
+    "        if (owner.getId() == null) {\n            this.em.persist(owner);\n        } else {\n            this.em.merge(owner);\n        }\n",
+    "        this.em.merge(owner);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "fragment_delete_skips_remove",
+  "kind": "behaviour",
+  "says": "the Spring Data delete fragment no longer removes the managed visit",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/repository/springdatajpa/SpringDataVisitRepositoryImpl.java",
+    "        if (em.contains(visit)) {\n            em.remove(visit);\n        }\n",
+    ""
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "service_delete_pet_noop",
+  "kind": "behaviour",
+  "says": "deleting a pet does nothing",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "        petRepository.delete(pet);\n",
+    "        pet.getId();\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "rename_save_owner",
+  "kind": "same",
+  "says": "ClinicService.saveOwner renamed to storeOwner, callers updated",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicService.java",
+    "\tvoid saveOwner(Owner owner) throws DataAccessException;",
+    "\tvoid storeOwner(Owner owner) throws DataAccessException;"
+   ],
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "    public void saveOwner(Owner owner) throws DataAccessException {",
+    "    public void storeOwner(Owner owner) throws DataAccessException {"
+   ],
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        this.clinicService.saveOwner(owner);\n",
+    "        this.clinicService.storeOwner(owner);\n"
+   ],
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        this.clinicService.saveOwner(currentOwner);\n",
+    "        this.clinicService.storeOwner(currentOwner);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "alias_local",
+  "kind": "same",
+  "says": "the owner passed through a second local",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        Owner owner = ownerMapper.toOwner(ownerFieldsDto);\n        this.clinicService.saveOwner(owner);\n",
+    "        Owner owner = ownerMapper.toOwner(ownerFieldsDto);\n        Owner toSave = owner;\n        this.clinicService.saveOwner(toSave);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "reformat_save_pet",
+  "kind": "same",
+  "says": "a comment and line breaks in savePet",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "    public void savePet(Pet pet) throws DataAccessException {\n        pet.setType(findPetTypeById(pet.getType().getId()));\n        petRepository.save(pet);\n    }\n",
+    "    public void savePet(Pet pet) throws DataAccessException {\n        // Resolve the type by id so a stale name is not persisted.\n        pet.setType(\n            findPetTypeById(pet.getType().getId()));\n\n        petRepository.save(pet);\n    }\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "log_before_delete",
+  "kind": "same",
+  "says": "a line printed before an owner is deleted",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        this.clinicService.deleteOwner(owner);\n",
+    "        System.out.println(\"deleting owner \" + ownerId);\n        this.clinicService.deleteOwner(owner);\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "reorder_setters",
+  "kind": "same",
+  "says": "two independent setters swapped",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        currentOwner.setAddress(ownerFieldsDto.getAddress());\n        currentOwner.setCity(ownerFieldsDto.getCity());\n",
+    "        currentOwner.setCity(ownerFieldsDto.getCity());\n        currentOwner.setAddress(ownerFieldsDto.getAddress());\n"
+   ]
+  ],
+  "moves": []
+ },
+ {
+  "id": "move_service_impl",
+  "kind": "same",
+  "says": "ClinicServiceImpl moved to a subpackage",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "package org.springframework.samples.petclinic.service;\n",
+    "package org.springframework.samples.petclinic.service.impl;\n\nimport org.springframework.samples.petclinic.service.ClinicService;\n"
+   ]
+  ],
+  "moves": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+    "src/main/java/org/springframework/samples/petclinic/service/impl/ClinicServiceImpl.java"
+   ]
+  ]
+ },
+ {
+  "id": "list_owners_empty_is_ok",
+  "kind": "read",
+  "says": "an empty owner list is 200, not 404",
+  "edits": [
+   [
+    "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+    "        if (owners.isEmpty()) {\n            return new ResponseEntity<>(HttpStatus.NOT_FOUND);\n        }\n        return new ResponseEntity<>(ownerMapper.toOwnerDtoCollection(owners), HttpStatus.OK);\n",
+    "        return new ResponseEntity<>(ownerMapper.toOwnerDtoCollection(owners), HttpStatus.OK);\n"
+   ]
+  ],
+  "moves": []
+ }
+]

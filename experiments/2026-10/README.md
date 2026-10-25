@@ -9,6 +9,7 @@ Two sets of results on the same commits and test suites.
 |---|---|
 | `feed-0.2.2/<project>.jsonl` | One line per commit tried: the headline, the counts, and every line `skimit diff` printed, or why it was skipped |
 | `verify-0.2.0/<project>.txt` | Output of `skimit verify` on each project's test suite |
+| `recall/shop.md` | 25 changes injected into the example shop by `scripts/recall.py` with skimit 0.2.3: which were said, which were missed, which produced a line for a change to code alone |
 
 **skimit 0.1**, which sorted changed methods into review buckets, written up in
 [docs/experiment.md](../../docs/experiment.md). These were computed with skimit 0.1.1 unless a file

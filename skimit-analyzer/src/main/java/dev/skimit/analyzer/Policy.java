@@ -147,6 +147,18 @@ public final class Policy {
       "Ljakarta/ws/rs/ext/Provider;", "Ljavax/ws/rs/ext/Provider;", "Lorg/aspectj/lang/annotation/Aspect;",
       "Ljakarta/persistence/Converter;", "Ljavax/persistence/Converter;");
 
+  /** Calls that pick what they run by name at run time: reflection and method handles. The call graph stops there. */
+  static final List<Rule> BY_NAME = List.of(
+      rule("BY_NAME", "java.lang.reflect.Method#invoke"), rule("BY_NAME", "java.lang.reflect.Constructor#newInstance"),
+      rule("BY_NAME", "java.lang.invoke.MethodHandle#invoke*"),
+      rule("BY_NAME", "org.springframework.util.ReflectionUtils#invokeMethod"),
+      rule("BY_NAME", "org.springframework.test.util.ReflectionTestUtils#invokeMethod"));
+
+  static boolean byName(MethodKey m) {
+    for (Rule r : BY_NAME) if (r.matches(m.owner(), m.name())) return true;
+    return false;
+  }
+
   public static Policy defaults() {
     Policy p = new Policy();
     return p;
