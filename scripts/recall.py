@@ -3,7 +3,7 @@
 
 Each mutation is written before any result is seen. A "behaviour" mutation changes what a way in
 does or how it does it, and skimit should say so; a "same" mutation changes the code but not the
-behaviour, and skimit should say "No change in behaviour."; a "read" mutation changes a read path,
+behaviour, and skimit should say nothing changed; a "read" mutation changes a read path,
 which skimit leaves out by design.
 
     scripts/recall.py [--out FILE]                       # the example shop, compiled with javac
@@ -86,6 +86,9 @@ SHOP_MUTATIONS = [
      [("src/shop/checkout/CheckoutHandler.java", "  @PostMapping(\"/checkout\")\n  public void submit(Order order) {\n" + CHARGE + "  }",
        "  // Charges the customer the computed total.\n  @PostMapping(\"/checkout\")\n  public void submit(Order order) {\n\n"
        "    payments.charge(\n        order.customer(),\n        prices.total(order));\n\n  }")]),
+    ("extract_local", "same", "the total put in a local before the charge",
+     [("src/shop/checkout/CheckoutHandler.java", CHARGE,
+       "    long total = prices.total(order);\n    payments.charge(order.customer(), total);\n")]),
     ("extract_method", "same", "the charge moved into a private helper",
      [("src/shop/checkout/CheckoutHandler.java", CHARGE + "  }\n",
        "    charge(order);\n  }\n\n  private void charge(Order order) {\n" + CHARGE + "  }\n")]),
@@ -228,7 +231,7 @@ def main():
 
     md = ["| Mutation | Kind | What it does | skimit | What skimit said |", "|---|---|---|---|---|"]
     for mid, kind, says, verdict, lines in rows:
-        said = "<br>".join(l.replace("|", "\\|") for l in lines) if lines else "No change in behaviour."
+        said = "<br>".join(l.replace("|", "\\|") for l in lines) if lines else "No change to what any way in writes, deletes, sends or calls."
         md.append(f"| `{mid}` | {kind} | {says} | **{verdict}** | {said} |")
     behaviour = [r for r in rows if r[1] == "behaviour"]
     same = [r for r in rows if r[1] == "same"]

@@ -63,7 +63,10 @@ The first sentence is the answer. Then come the lines, in this order:
 
 Seven lines are shown; the rest fold away. Code that nothing calls is not a way in, so a service
 written before its route says nothing until the route exists. A change that does none of these
-things, such as a reformatted helper or a renamed class, says "No change in behaviour."
+things, such as a reformatted helper or a renamed class, says "No change to what any way in writes,
+deletes, sends or calls." That sentence is exact: a check on a read path, an interceptor's path
+patterns or a mapping annotation can change what the program does without any of those changing,
+and skimit will not have seen it (see [limits](limits.md#known-gaps)).
 
 `--html page.html` writes one HTML file: the answer, what the change did, and the map
 after it. Pass the source diff too and each line about a method can show that method's code, on
@@ -227,6 +230,16 @@ On another CI system, `action/run.sh <base-commit>` does the same job from the r
 checkout. skimit's own repository runs the action on every pull request: see
 [.github/workflows/skimit.yml](../.github/workflows/skimit.yml) and its
 [policy](../skimit.policy).
+
+## With an AI reviewer
+
+An agent that reviews code can run skimit first and lead with what the change did, instead of
+reading every line and guessing. `--json` is the contract: `headline`, the counts, and each
+line's `kind`, `text`, `methods` and `code`. The kinds are listed most important first in
+[.claude/skills/skimit/SKILL.md](../.claude/skills/skimit/SKILL.md), a skill for Claude Code that
+builds the base and head, runs the comparison, and says how to use the lines and where skimit
+cannot see. Copy it into a project's `.claude/skills/` directory, or into your own, and the agent
+will reach for skimit when asked to review a Java change.
 
 ## Replay your own history
 

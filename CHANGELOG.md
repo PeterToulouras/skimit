@@ -24,10 +24,35 @@ Found by injecting 25 known changes into the example shop and reading what skimi
   /refunds no longer writes MONEY via Ledger (2 → 1 ways in); RefundHandler.refund now calls
   Method.invoke, which skimit does not follow".
 
-Of the 25 injected changes, all 15 that change behaviour are said (14 under 0.2.2) and 5 of the
-9 that change the code alone are silent (4 under 0.2.2). The replay over the 575 commits was not
-re-run for this release: lines about removed checks move up without changing the counts, and a
-changed repository implementation or a renamed method may add or remove a line about how.
+Found by reading 60 replayed commits against what skimit said about them (the table is in
+`experiments/2026-10/recall/labels.md`):
+
+- **Renamed fields are read by their old names**, as renamed methods and moved classes are. A
+  commit that renamed every `xxlJobInfoDao` field to `xxlJobInfoMapper` said 39 lines; it says
+  none. Several fields of one type renamed together, such as three enum constants with a typo
+  fixed, pair by the names they are closest to.
+- **An anonymous class renumbered by an insertion is the same class.** javac numbers them per
+  top-level class, so a new one inserted earlier used to make the next one "new on the way to"
+  an effect.
+- **Only what is done to an object before the write is its data**, and reading from it is not
+  doing anything to it: mapping the saved entity to a response, or a getter in a log line, no
+  longer says the write has different data.
+- **A check that fails through a helper that always throws is still a check.** Moving from
+  `return` to `Fail.now(...)` used to read as every check before the write being gone.
+- **A value put in a local first, or passed through a second one, is not a change**, and reading
+  a parameter, a field or a constant earlier or later is not another order of steps.
+- **Spring Data fragments are wired by name.** `SpringDataPetRepositoryImpl implements
+  PetRepositoryOverride` is reached through the repository, as Spring Data would reach it.
+- **The headline says what it means.** "No change in behaviour." is now "No change to what any
+  way in writes, deletes, sends or calls." Of 30 commits that got the old sentence, 6 had changed
+  behaviour a reviewer would want to know about, 4 of them in checks that guard reads, which are
+  outside what skimit sees.
+
+Of the 25 changes injected into the example shop, all 15 that change behaviour are said (14 under
+0.2.2) and 5 of the 10 that change the code alone are silent (4 of 9 under 0.2.2). Of 18 injected
+into PetClinic REST, 10 of 11 that change behaviour are said and 4 of 6 refactorings are silent.
+The replay over the 575 commits and the runtime check are re-run by the `measure` workflow; the
+numbers are in [docs/evidence.md](docs/evidence.md).
 
 ## 0.2.2
 

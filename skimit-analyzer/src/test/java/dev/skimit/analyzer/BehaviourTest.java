@@ -307,6 +307,32 @@ class BehaviourTest {
   }
 
   @Test
+  void whatIsDoneToTheObjectAfterTheWriteIsNotItsData() throws IOException {
+    String item = "public class Item { void setName(String n) { } void setPrice(long p) { } }";
+    String items = "public class ItemRepository { public void save(Item i) { } }";
+    String service = "public class OrderService { ItemRepository items; void place(long id) { Item i = new Item(); i.setName(\"x\"); items.save(i); i.setPrice(id); } }";
+    Feed f = feed(program(service, CONTROLLER, item, items), program(service.replace("i.setPrice(id);", "i.setPrice(id + 1);"), CONTROLLER, item, items));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    // Reading from the object, to log it, is not work done on it either.
+    String logged = service.replace("items.save(i);", "System.out.println(i.toString()); items.save(i);");
+    Feed g = feed(program(service, CONTROLLER, item, items), program(logged, CONTROLLER, item, items));
+    assertTrue(g.isEmpty(), g.lines.toString());
+  }
+
+  @Test
+  void aCheckThatFailsThroughAHelperThatThrowsIsStillACheck() throws IOException {
+    String fail = "public class Fail { static void now(String why) { throw new IllegalStateException(why); } }";
+    String returning = SERVICE.replace("repo.save(id);", "if (repo.count() > 100) return; repo.save(id);");
+    String throwing = SERVICE.replace("repo.save(id);", "if (repo.count() > 100) Fail.now(\"too many\"); repo.save(id);");
+    Feed f = feed(program(returning, CONTROLLER, fail), program(throwing, CONTROLLER, fail));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    // And taking the check away still says so.
+    Feed g = feed(program(throwing, CONTROLLER, fail), program(SERVICE, CONTROLLER, fail));
+    assertEquals(List.of("POST /api/orders: no longer checks OrderRepository.count before it writes Order (in OrderService.place)"),
+        g.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
   void stepsThatMovedUnderANewGuardAreNotSaidToBeReordered() throws IOException {
     String item = "public class Item { void setName(String n) { } void setPrice(long p) { } }";
     String items = "public class ItemRepository { public void save(Item i) { } }";
@@ -404,6 +430,18 @@ class BehaviourTest {
     assertEquals(List.of("POST /api/orders no longer writes Order (1 → 0 ways in); OrderService.place now calls Method.invoke, which skimit does not follow"),
         f.lines.stream().map(Feed.Line::text).toList());
     assertEquals(Feed.Kind.LOSES, f.lines.get(0).kind());
+  }
+
+  @Test
+  void aValuePutInALocalFirstIsNotALine() throws IOException {
+    String ids = "public class Ids { static long next(long id) { return id + 1; } }";
+    String direct = SERVICE.replace("repo.save(id);", "repo.save(Ids.next(id));");
+    String viaLocal = SERVICE.replace("repo.save(id);", "long next = Ids.next(id); repo.save(next);");
+    Feed f = feed(program(direct, CONTROLLER, ids), program(viaLocal, CONTROLLER, ids));
+    assertTrue(f.isEmpty(), f.lines.toString());
+    String aliased = SERVICE.replace("repo.save(id);", "long same = id; repo.save(same);");
+    Feed g = feed(program(SERVICE, CONTROLLER), program(aliased, CONTROLLER));
+    assertTrue(g.isEmpty(), g.lines.toString());
   }
 
   @Test

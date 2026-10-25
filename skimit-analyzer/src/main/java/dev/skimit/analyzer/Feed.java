@@ -158,14 +158,14 @@ public final class Feed {
           // The walk stops at the effect, but what the effect's own code does can change too.
           PathChange.Body then = PathChange.body(was.owner(), old, locals(base, was));
           PathChange.Body here = PathChange.body(m.owner(), now, locals(head, m));
-          if (then.text().equals(here.text())) continue;
+          if (PathChange.sameSteps(then.text(), here.text())) continue;
           template = "the code that " + EFFECT + " changed";
           detail = bodyDetail(then, here);
         } else if (now.instructions.size() > SLICE_LIMIT || old.instructions.size() > SLICE_LIMIT) {
           template = EFFECT + ", through a method that changed and is too long to compare";
         } else {
-          PathChange.Change c = PathChange.compare(was.owner(), old, locals(base, was), toward(base, x), m.owner(), now,
-              locals(head, m), toward(head, x));
+          PathChange.Change c = PathChange.compare(was.owner(), old, locals(base, was), calls(base, x), m.owner(), now,
+              locals(head, m), calls(head, x));
           if (!c.any()) continue;
           template = describe(c);
         }
@@ -189,7 +189,7 @@ public final class Feed {
       PathChange.Body then = was == null ? null : PathChange.body(was.owner(), base.analysis.graph.methods.get(was), locals(base, was));
       PathChange.Body now = PathChange.body(m.owner(), head.analysis.graph.methods.get(m), locals(head, m));
       // Only the packages of the classes it uses changed (javax to jakarta): it does the same.
-      if (then != null && then.text().equals(now.text())) continue;
+      if (then != null && PathChange.sameSteps(then.text(), now.text())) continue;
       String said = then == null ? "new" : bodyDetail(then, now);
       // Nothing more to say from its body, but it takes or returns something else.
       String detail = said.isEmpty() && PathChange.signature(was.desc(), m.desc()) != null ? PathChange.signature(was.desc(), m.desc()) : said;
@@ -444,7 +444,7 @@ public final class Feed {
           r.add("long");
           continue;
         }
-        PathChange.Slices s = sliced.computeIfAbsent(p.method(), k -> PathChange.slices(k.owner(), mn, Map.of(), toward(b, x)));
+        PathChange.Slices s = sliced.computeIfAbsent(p.method(), k -> PathChange.slices(k.owner(), mn, Map.of(), calls(b, x)));
         if (s.dataInsns().stream().anyMatch(i -> calls(g, i, q.method()))) r.add("data");
         if (s.checkInsns().stream().anyMatch(i -> calls(g, i, q.method()))) r.add("check");
       }
@@ -497,6 +497,12 @@ public final class Feed {
 
   /** Methods longer than this are not sliced; a change in one is reported without detail. */
   static final int SLICE_LIMIT = 4000;
+
+  /** The calls that matter to slicing a method for this effect: those toward it, and those that never return. */
+  private static PathChange.Calls calls(Behaviour b, Effect x) {
+    CallGraph g = b.analysis.graph;
+    return new PathChange.Calls(toward(b, x), insn -> insn instanceof MethodInsnNode mi && g.neverReturns(mi.owner, mi.name, mi.desc));
+  }
 
   /** Whether an instruction calls toward the effect: a method that leads to it, or the lambda that does. */
   private static java.util.function.Predicate<AbstractInsnNode> toward(Behaviour b, Effect x) {

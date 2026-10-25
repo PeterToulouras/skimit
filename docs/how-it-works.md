@@ -63,7 +63,9 @@ methods of the handler its callers construct that implement `ContentHandler`. Th
 callback through wrappers that pass it on or wrap it again, but only through parameters.
 
 A bean method named in an annotation expression (`@PreAuthorize("@rules.canEdit(#id)")`) is
-called by the annotated method. `toString`, `hashCode` and `equals` called on a plain `Object`
+called by the annotated method. A Spring Data repository's own methods are wired to the class
+named after the repository or after the fragment interface, with `Impl`, as Spring Data wires
+them, so a call through the repository can land there. `toString`, `hashCode` and `equals` called on a plain `Object`
 are not followed into the application.
 
 ## What a change did
@@ -82,7 +84,11 @@ was, and code elsewhere that only switched to the new name is not a change.
 A method renamed and nothing more is matched the same way: a method that exists only after the
 change is paired with the one method of its class that existed only before it and has the same
 signature and the same body; a supertype that declares the new name where it declared the old one
-is renamed with it. A caller whose only edit is the new name is not a change.
+is renamed with it. A field renamed and nothing more is paired with the one field of its type and
+access that went, or, when several were renamed together, with the old name it is closest to. An
+anonymous class whose methods have exactly the bodies of one that went is that class under a new
+number, since javac renumbers them when one is inserted. A method whose only edit is one of these
+new names is not a change.
 
 **Which ways in are the same.** A way in keeps its name across the change, or keeps its method
 when the method moved with its class. A route renamed along with its method (`/jobinfo/remove` to
@@ -101,17 +107,21 @@ effect it already had, skimit slices the method twice, before and after, by data
 bytecode:
 
 - the **data slice**: the instructions that compute the values going into the calls toward the
-  effect, and anything else done to those objects beforehand (`pet.setOwner(owner)` before
-  `save(pet)`). Numbers, flags, strings and boxed values have no identity: passing the same id or
-  the same name to two calls does not join them, since nothing done to one can change it.
+  effect, and anything else done to those objects before the last of those calls
+  (`pet.setOwner(owner)` before `save(pet)`; not `toPetDto(pet)` after it, and not a getter, which
+  does nothing to the object). Numbers, flags, strings and boxed values have no identity: passing
+  the same id or the same name to two calls does not join them, since nothing done to one can
+  change it.
 - the **check slice**: the branches with a call toward the effect down one side only, and what
-  they test.
+  they test. A call to a method that never returns, a helper that always throws, ends its side.
 
-Each slice is compared as normalised text: locals renumbered, a parameter known by its type and
-its place among the parameters of that type, lambda numbers dropped, classes known by their simple
-names, and a call to a method the same whether it is made directly or through its type. So a
-class that only moved package (`javax` to `jakarta`), a private method made visible to a proxy,
-or a new parameter of another type that the slice does not use is not a change. If neither slice
+Each slice is compared as normalised text: a parameter known by its type and its place among the
+parameters of that type, other locals left out (a local is a name for a value, not a step), lambda
+numbers dropped, classes known by their simple names, a call to a method the same whether it is
+made directly or through its type, and reads of parameters, fields and constants allowed to sit
+in another order. So a class that only moved package (`javax` to `jakarta`), a private method made
+visible to a proxy, a value put in a local first, or a new parameter of another type that the
+slice does not use is not a change. If neither slice
 changed, the change made no difference to that effect and there is no line. If one did, the line
 says which, and what changed in it as far as the bytecode can say:
 

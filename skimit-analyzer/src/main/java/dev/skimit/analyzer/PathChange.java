@@ -262,18 +262,30 @@ final class PathChange {
     }
   }
 
-  static Change compare(String ownerBefore, MethodNode before, Map<Integer, String> localsBefore, Predicate<AbstractInsnNode> towardBefore,
-      String ownerAfter, MethodNode after, Map<Integer, String> localsAfter, Predicate<AbstractInsnNode> towardAfter) {
-    Slices a = slices(ownerBefore, before, localsBefore, towardBefore);
-    Slices b = slices(ownerAfter, after, localsAfter, towardAfter);
+  /** What a method calls toward an effect, and what it calls that never returns (a helper that always throws). */
+  record Calls(Predicate<AbstractInsnNode> toward, Predicate<AbstractInsnNode> stops) {}
+
+  static Change compare(String ownerBefore, MethodNode before, Map<Integer, String> localsBefore, Calls callsBefore,
+      String ownerAfter, MethodNode after, Map<Integer, String> localsAfter, Calls callsAfter) {
+    Slices a = slices(ownerBefore, before, localsBefore, callsBefore);
+    Slices b = slices(ownerAfter, after, localsAfter, callsAfter);
     boolean both = a.reaches() && b.reaches();
     // A slice can look reordered while the method around it changed what guards it: say so only
     // when the whole method takes the same steps.
     boolean reordered = before != null && after != null
         && Delta.steps(text(before, Set.copyOf(java.util.Arrays.asList(before.instructions.toArray()))))
             .equals(Delta.steps(text(after, Set.copyOf(java.util.Arrays.asList(after.instructions.toArray())))));
-    return new Change(both && !a.data().text().equals(b.data().text()), both && !a.checks().text().equals(b.checks().text()),
+    return new Change(both && !sameSteps(a.data().text(), b.data().text()), both && !sameSteps(a.checks().text(), b.checks().text()),
         a.reaches() != b.reaches(), Delta.between(a.data(), b.data(), reordered), Delta.between(a.checks(), b.checks(), reordered));
+  }
+
+  /** Reading a parameter, a field or a constant changes nothing; moving such a step earlier or later is not a change. */
+  private static final Pattern PURE = Pattern.compile("(?m)^(?:ALOAD this|[ILFDA]LOAD [^v\\s]\\S*|GET(?:FIELD|STATIC) .*|[ILFDA]CONST_\\S+|BIPUSH .*|SIPUSH .*|LDC .*|CHECKCAST .*)\\n");
+
+  /** Whether two texts of a part do the same steps, allowing the pure ones to sit in another order. */
+  static boolean sameSteps(String before, String after) {
+    return before.equals(after)
+        || Delta.steps(before).equals(Delta.steps(after)) && PURE.matcher(before).replaceAll("").equals(PURE.matcher(after).replaceAll(""));
   }
 
   /**
@@ -366,8 +378,9 @@ final class PathChange {
   }
 
   /** The slices of a method; {@code locals} are the names of its locals, by slot, where known. */
-  static Slices slices(String owner, MethodNode mn, Map<Integer, String> locals, Predicate<AbstractInsnNode> toward) {
+  static Slices slices(String owner, MethodNode mn, Map<Integer, String> locals, Calls calls) {
     if (mn == null || mn.instructions.size() == 0) return Slices.NONE;
+    Predicate<AbstractInsnNode> toward = calls.toward();
     Map<AbstractInsnNode, Set<AbstractInsnNode>> next = new HashMap<>();
     Analyzer<Dep> analyzer = new Analyzer<>(new Deps()) {
       @Override
@@ -401,10 +414,16 @@ final class PathChange {
       }
       data.add(t);
     }
+    // Only what is done to those objects before the last call toward the effect: what happens to
+    // them afterwards (mapping the saved entity to a response) is not what was written.
+    int last = mn.instructions.indexOf(targets.get(targets.size() - 1));
     for (AbstractInsnNode insn : mn.instructions) {
       if (!(insn instanceof MethodInsnNode) && insn.getOpcode() != Opcodes.PUTFIELD) continue;
-      Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
-      if (f == null || targets.contains(insn)) continue;
+      int at = mn.instructions.indexOf(insn);
+      Frame<Dep> f = frames[at];
+      if (f == null || targets.contains(insn) || at > last) continue;
+      // Reading from the object (a getter, toString) does nothing to it.
+      if (insn instanceof MethodInsnNode m && Type.getArgumentTypes(m.desc).length == 0 && Type.getReturnType(m.desc).getSort() != Type.VOID) continue;
       List<Dep> in = inputs(insn, f);
       if (in.stream().anyMatch(d -> d.origins.stream().anyMatch(objects::contains))) {
         data.add(insn);
@@ -419,7 +438,7 @@ final class PathChange {
       Frame<Dep> f = frames[mn.instructions.indexOf(insn)];
       if (f == null) continue;
       Set<Boolean> outcomes = new HashSet<>();
-      for (AbstractInsnNode s : next.getOrDefault(insn, Set.of())) outcomes.add(reaches(s, targets, next, insn));
+      for (AbstractInsnNode s : next.getOrDefault(insn, Set.of())) outcomes.add(reaches(s, targets, next, insn, calls.stops()));
       if (outcomes.size() < 2) continue;
       checks.add(insn);
       for (Dep d : inputs(insn, f)) checks.addAll(d.deps);
@@ -559,14 +578,16 @@ final class PathChange {
     return null;
   }
 
+  /** Whether a target can be reached from here without passing the branch again; a call that never returns ends the path. */
   private static boolean reaches(AbstractInsnNode from, List<AbstractInsnNode> targets,
-      Map<AbstractInsnNode, Set<AbstractInsnNode>> next, AbstractInsnNode branch) {
+      Map<AbstractInsnNode, Set<AbstractInsnNode>> next, AbstractInsnNode branch, Predicate<AbstractInsnNode> stops) {
     Set<AbstractInsnNode> seen = new HashSet<>(Set.of(branch));
     List<AbstractInsnNode> work = new ArrayList<>(List.of(from));
     while (!work.isEmpty()) {
       AbstractInsnNode n = work.remove(work.size() - 1);
       if (!seen.add(n)) continue;
       if (targets.contains(n)) return true;
+      if (stops.test(n)) continue;
       work.addAll(next.getOrDefault(n, Set.of()));
     }
     return false;
@@ -609,6 +630,7 @@ final class PathChange {
   }
 
   private static final Pattern LOCAL = Pattern.compile("(LOAD|STORE|IINC) (\\d+)");
+  private static final Pattern PLUMBING = Pattern.compile("(?m)^[ILFDA](?:LOAD|STORE) v\\d+\\n");
   private static final Pattern LAMBDA = Pattern.compile("lambda\\$([\\w$]*?)\\$\\d+");
   private static final Pattern PACKAGE = Pattern.compile("(?:[a-z_][\\w$]*/)+(?=[A-Za-z_$])");
   private static final Pattern INVOKE = Pattern.compile("^INVOKE(VIRTUAL|SPECIAL|INTERFACE)");
@@ -649,6 +671,10 @@ final class PathChange {
       m.appendReplacement(out, Matcher.quoteReplacement(m.group(1) + " " + name));
     }
     m.appendTail(out);
+    // A local is a name for a value, not a step: putting a value in one, or passing it through a
+    // second, changes nothing about what reaches the effect. Parameters stay, since which one is
+    // passed is the point.
+    out = new StringBuilder(PLUMBING.matcher(out).replaceAll(""));
     // A class is known by its simple name: a library that moved a class to another package, or a
     // class of the program that moved, has not changed what the method does.
     String plain = HANDLE.matcher(LAMBDA.matcher(out).replaceAll("lambda\\$$1\\$")).replaceAll("handle kind INVOKE");

@@ -1,5 +1,5 @@
 Changes to behaviour said: 15 of 15.
-Changes to code alone kept silent: 5 of 9.
+Changes to code alone kept silent: 5 of 10.
 Read-path changes, silent by design: 1 of 1.
 
 | Mutation | Kind | What it does | skimit | What skimit said |
@@ -21,6 +21,7 @@ Read-path changes, silent by design: 1 of 1.
 | `write_via_reflection` | behaviour | the same write, made through reflection | **caught** | POST /refunds no longer writes MONEY via Ledger (2 → 1 ways in); RefundHandler.refund now calls Method.invoke, which skimit does not follow |
 | `rename_local` | same | a parameter renamed | **silent** | No change in behaviour. |
 | `reformat_and_comment` | same | a comment and line breaks | **silent** | No change in behaviour. |
+| `extract_local` | same | the total put in a local before the charge | **FALSE LINE** | POST /checkout: writes MONEY via Ledger with different data: the same steps in another order (in CheckoutHandler.submit) |
 | `extract_method` | same | the charge moved into a private helper | **FALSE LINE** | POST /checkout: writes MONEY via Ledger now using CheckoutHandler.charge, no longer Order.customer, PaymentService.charge and 1 more (in CheckoutHandler.submit) |
 | `move_class_package` | same | Permissions moved to another package | **silent** | No change in behaviour. |
 | `add_logging` | same | a line printed before the charge | **silent** | No change in behaviour. |

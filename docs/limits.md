@@ -9,8 +9,15 @@ bite on your code.
   JMS and SQS listeners, Spring events, startup hooks and threads are recognised. A gRPC service,
   a GraphQL resolver, or a Quarkus, Micronaut or Vert.x handler is not: nothing in the program
   calls it, so it is treated as code nothing calls and left out.
-- **Reads are not effects.** Reading data is not on the map, however sensitive. Declare a read as
-  a sink (`sink SECRETS com.acme.vault.Vault#get*`) if reading it should count.
+- **Reads are not effects, so neither are the checks that guard them.** Reading data is not on
+  the map, however sensitive, and a permission check before a read, an interceptor's path
+  patterns, or an access-key check in a filter can change without a line. Of 30 replayed commits
+  that got the "no change" sentence and were [read by hand](evidence.md#read-by-hand), 6 had
+  changed behaviour a reviewer would want, 4 of them in such checks. Declare a read as a sink
+  (`sink SECRETS com.acme.vault.Vault#get*`) if reading it should count; then the checks before
+  it count too.
+- **Mapping annotations are not read.** A JPA relation made `@Transient`, a cascade removed, or
+  an `@OrderBy` changed alters what a write persists or a read returns without any call changing.
 - **SQL kept outside the bytecode.** A query in a MyBatis XML mapper, or in any file the classes
   read at run time, is not seen. A change to it alone says nothing; a change to the method that
   runs it does.
@@ -31,10 +38,15 @@ bite on your code.
   own.
 - **Refactorings the slices read as change.** Extracting the call to an effect into a private
   helper, replacing a field with a local made on the spot, adding a parameter the callee never
-  uses, and swapping the operands of a product each produce a line about how, because the
+  uses, swapping the operands of a product, pulling an argument into a local when that reorders
+  two calls, and swapping a helper of the project's own for a library's (`size() > 0` for
+  `isEmpty()`, a private `copy` for `IOTool.copy`) each produce a line about how, because the
   instructions feeding the effect differ even though what reaches it does not. Renamed methods,
-  moved classes, renamed locals, reordered code and added logging do not. The
-  [recall table](evidence.md#known-changes-injected) lists each case with what skimit said.
+  fields and classes, renumbered anonymous classes, moved classes, renamed locals, values put in
+  locals, reordered reads and added logging do not. The [recall tables](evidence.md#known-changes-injected)
+  list each case with what skimit said.
+- **Text built up and then stored.** What is appended to a `StringBuilder` that is later set on
+  an entity and written is not followed, so a change to that text says nothing.
 - **Clients built an unusual way.** An interface a library turns into a client is recognised when
   it is declared as one, or handed to a factory call whose result is cast to it. Other ways of
   building a client make its calls look like calls to an interface with no implementation, which
