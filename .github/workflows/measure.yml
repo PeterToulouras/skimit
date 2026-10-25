@@ -12,7 +12,7 @@ on:
         default: ''
   push:
     branches: ['measure/**']
-    paths-ignore: ['.github/workflows/measure.yml']
+    paths-ignore: ['.github/workflows/**']
 permissions:
   contents: read
 jobs:

@@ -1,0 +1,41 @@
+# Builds one commit of a project and its parent, and hands back their compiled classes as an
+# artifact, so that what skimit says about a real commit can be looked into on a machine that
+# cannot build the project itself.
+name: classes
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: GitHub repository, owner/name
+        required: true
+      sha:
+        description: The commit to build, with its first parent
+        required: true
+      build:
+        description: Build command, run at the root of the checkout
+        required: false
+        default: mvn -q -B -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true compile
+permissions:
+  contents: read
+jobs:
+  classes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 21, cache: maven }
+      - run: |
+          git clone -q https://github.com/${{ inputs.repo }}.git project
+          for side in base head; do
+            rev="${{ inputs.sha }}"; [ "$side" = base ] && rev="${{ inputs.sha }}^"
+            git -C project checkout -q "$rev" && git -C project clean -qfdx
+            (cd project && ${{ inputs.build }})
+            n=0
+            while IFS= read -r d; do n=$((n + 1)); mkdir -p "out/$side"; cp -r "$d" "out/$side/$n"; done < <(
+              find project -type d \( -path '*/target/classes' -o -path '*/build/classes/java/main' \) -not -path '*/node_modules/*' | sort)
+            echo "$side: $n class directories"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: classes-${{ inputs.sha }}
+          path: out
