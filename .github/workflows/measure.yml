@@ -5,8 +5,14 @@
 name: measure
 on:
   workflow_dispatch:
+    inputs:
+      projects:
+        description: Replay only these projects (comma-separated); empty for all
+        required: false
+        default: ''
   push:
     branches: ['measure/**']
+    paths-ignore: ['.github/workflows/measure.yml']
 permissions:
   contents: read
 jobs:
@@ -26,6 +32,7 @@ jobs:
 
   replay:
     needs: skimit
+    if: inputs.projects == '' || contains(format(',{0},', inputs.projects), format(',{0},', matrix.project))
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -38,7 +45,8 @@ jobs:
           - { project: spring-petclinic, repo: spring-projects/spring-petclinic, rev: 500158f732, count: 100 }
           - { project: spring-framework-petclinic, repo: spring-petclinic/spring-framework-petclinic, rev: cf392920cd, count: 100 }
           - { project: jpetstore-6, repo: mybatis/jpetstore-6, rev: 344ef63ddf, count: 100 }
-          - { project: vhr, repo: lenve/vhr, rev: 03abbd35af, count: 100 }
+          # vhr's build lives in a subdirectory.
+          - { project: vhr, repo: lenve/vhr, rev: 03abbd35af, count: 100, build: mvn -q -B -f vhr/vhrserver/pom.xml -Dmaven.test.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true compile }
           - { project: newbee-mall, repo: newbee-ltd/newbee-mall, rev: a069069b07, count: 100 }
           - { project: litemall, repo: linlinjava/litemall, rev: a1ef964a71, count: 100 }
           - { project: xxl-job, repo: xuxueli/xxl-job, rev: 693d27640b, count: 200 }
@@ -72,6 +80,7 @@ jobs:
 
   recall:
     needs: skimit
+    if: inputs.projects == ''
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -99,6 +108,7 @@ jobs:
 
   verify:
     needs: skimit
+    if: inputs.projects == ''
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
