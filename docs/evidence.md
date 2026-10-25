@@ -143,7 +143,7 @@ Data fragment class wired by its name.
 ## Read by hand
 
 The replay counts what skimit said; it cannot say whether it was right. Sixty of the 575 commits
-were drawn by a fixed shuffle, thirty that skimit 0.2.2 said nothing about and thirty it said only
+of the October run were drawn by a fixed shuffle, thirty that skimit 0.2.2 said nothing about and thirty it said only
 how an effect changed, and each was read against its diff. The table, with a note on every
 commit and what 0.2.3 says on the same one, is
 [experiments/2026-10/recall/labels.md](../experiments/2026-10/recall/labels.md).
