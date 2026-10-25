@@ -16,7 +16,7 @@ on:
         default: ''
   push:
     branches: ['measure/**']
-    paths-ignore: ['.github/workflows/**']
+    paths-ignore: ['.github/workflows/**', 'docs/**', '**.md', '.claude/**']
 permissions:
   contents: read
 jobs:
