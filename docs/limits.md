@@ -6,9 +6,12 @@ What the analysis does not see yet. `skimit verify` on your own tests shows whet
 bite on your code.
 
 - **Ways in from other frameworks.** Spring MVC, JAX-RS, `@Scheduled`, XXL-JOB, Kafka, RabbitMQ,
-  JMS and SQS listeners, Spring events, startup hooks and threads are recognised. A gRPC service,
-  a GraphQL resolver, or a Quarkus, Micronaut or Vert.x handler is not: nothing in the program
-  calls it, so it is treated as code nothing calls and left out.
+  JMS and SQS listeners, Spring events, startup hooks, threads, the callbacks of library types
+  (an AWS Lambda handler) and routes registered by code, where a path literal and a handler meet
+  in one call (`app.get("/jobs", handler)`), are recognised. A gRPC service, a GraphQL resolver,
+  a Quarkus or Micronaut handler, or a route built up in several calls (Vert.x's
+  `router.get("/jobs").handler(h)`, WebFlux's `route(GET("/jobs"), h)`) is not: nothing in the
+  program calls it, so it is treated as code nothing calls and left out.
 - **Reads are not effects, so neither are the checks that guard them.** Reading data is not on
   the map, however sensitive, and a permission check before a read, an interceptor's path
   patterns, or an access-key check in a filter can change without a line. Of 30 replayed commits

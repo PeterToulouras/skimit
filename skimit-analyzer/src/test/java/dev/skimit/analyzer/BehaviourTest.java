@@ -79,6 +79,56 @@ class BehaviourTest {
     assertFalse(b.entries.keySet().stream().anyMatch(id -> id.contains("on startup")), b.entries.keySet().toString());
   }
 
+  static final String ROUTER = """
+      public class Router {
+        public interface Handler { void handle(String body) throws Exception; }
+        public enum Verb { GET, POST }
+        java.util.Map<String, Handler> routes = new java.util.HashMap<>();
+        public void add(Verb verb, String path, Handler h) { routes.put(verb + " " + path, h); }
+        public void dispatch(String key, String body) throws Exception { routes.get(key).handle(body); }
+      }""";
+  /** A handler for a serverless runtime: a generic library interface, routes registered in its constructor. */
+  static final String API = """
+      public class Api implements java.util.function.Function<String, String> {
+        OrderRepository repo;
+        Router router = new Router();
+        public Api() {
+          router.add(Router.Verb.POST, "/orders", this::create);
+          router.add(Router.Verb.GET, "/orders", body -> System.out.println(body));
+        }
+        void create(String body) { repo.save(body.length()); }
+        public String apply(String request) {
+          try { router.dispatch(request, request); } catch (Exception e) { return "error"; }
+          return "ok";
+        }
+      }""";
+
+  @Test
+  void aRouteRegisteredInCodeIsAWayInNamedByItsVerbAndPath() throws IOException {
+    // The router reaches every handler it registered, but that is dispatch: the write belongs to the route.
+    Behaviour b = behaviour(program(ROUTER, API));
+    assertEquals(Map.of("POST /orders", List.of("writes Order")), effects(b));
+  }
+
+  @Test
+  void aHandlerForAGenericLibraryInterfaceIsAWayInThoughItsBridgeCallsIt() throws IOException {
+    // javac makes apply(Object) call apply(String); that bridge is the same method, not a caller.
+    String api = "public class Api implements java.util.function.Function<String, String> { OrderRepository repo;"
+        + " public String apply(String request) { repo.save(request.length()); return \"ok\"; } }";
+    Behaviour b = behaviour(program(api));
+    assertEquals(Map.of("Function callback Api.apply", List.of("writes Order")), effects(b));
+  }
+
+  @Test
+  void aClientCallWithAPathAndACallbackIsNotARoute() throws IOException {
+    // A path literal and a lambda look like a route registration; with a library callback type and no verb, they are not.
+    String client = "public class Client { public void send(String path, java.util.function.Consumer<String> onReply) { onReply.accept(path); } }";
+    String service = "public class OrderService { OrderRepository repo; Client client;"
+        + " void place(long id) { client.send(\"/orders\", reply -> repo.save(id)); } }";
+    Behaviour b = behaviour(program(client, service, CONTROLLER));
+    assertEquals(Map.of("POST /api/orders", List.of("writes Order")), effects(b));
+  }
+
   @Test
   void aThreadThatCausesNothingDoesNotHideAChangeInItsTwinThatWrites() throws IOException {
     // Two threads started in one method share a name; the quiet one must not take over what the other runs.

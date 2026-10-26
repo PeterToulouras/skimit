@@ -139,7 +139,7 @@ mappers and DAOs or straight through a common client (JDBC, Spring's `JdbcTempla
 Hibernate, MyBatis, MongoDB, DynamoDB, S3); calls to other services over HTTP (`RestTemplate`,
 `RestClient`, `WebClient`, the JDK's and Apache's HTTP clients, OkHttp, and interfaces declared as
 clients with Feign, Spring's HTTP interfaces, MicroProfile REST client or Retrofit); and messages
-and email sent (Kafka, RabbitMQ, JMS, SQS, SNS, JavaMail). For your own repositories, mappers and
+and email sent (Kafka, RabbitMQ, JMS, SQS, SNS, SES, JavaMail). For your own repositories, mappers and
 DAOs, a method counts as a write when its name says so, wherever the word is (`save`,
 `batchDelete`, `scheduleBatchUpdate`); reads and queries do not count. A store is named after its
 class: a call to `OrderRepository.save` writes `Order`. A write whose method name starts with

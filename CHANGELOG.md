@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Found by running skimit on a serverless Java application of the author's (AWS Lambda, routes
+registered in code), where 0.2.3 said "No way in causes an effect skimit recognises":
+
+- **A route registered by code is a way in.** `router.addRoute(HttpMethod.POST, "/jobs",
+  this::createJob)` or `app.get("/jobs", ctx -> ...)` makes the handler a way in named `POST
+  /jobs`, as an annotated route would be; the router that dispatches to it is not credited with
+  what it does. A path and a lambda alone are not enough, since a client call with a callback
+  looks the same: the handler's type must be the program's own, or a verb must be there.
+- **A compiler bridge is not a caller.** A class implementing a generic library interface
+  (`RequestHandler<Request, Response>`) gets a `handleRequest(Object)` bridge that calls the real
+  method, which made the real method look called and so not a way in. The application's only
+  entry points were lost to this.
+- **Email sent through Amazon SES is a message sent**, as JavaMail, SQS and SNS already were.
+
 ## 0.2.3
 
 Found by injecting 25 known changes into the example shop and reading what skimit said
