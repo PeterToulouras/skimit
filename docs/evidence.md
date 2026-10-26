@@ -46,15 +46,15 @@ which that run left out, so its `httpJobHandler` job counts as a way in.
   on ClinicService.findOwnerById; writes Pet now using ClinicService.findOwnerById, no longer new
   Owner`.
 - **It fits on a screen.** Of the 205 commits that had something to say, the median said 2 lines
-  and 179 (87%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move of its
-  portal to a new version of its API, said 99, broadest first.
+  and 180 (88%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move of its
+  portal to a new version of its API, said 98, broadest first.
 - **Bug fixes** (measured under 0.2.2). 157 of the commits say they fix something. 64 of them
   changed behaviour by skimit's account (62 how, 2 what). The other 93 changed nothing a way in does: error messages,
   display, logging, configuration, read paths, typos. A fix in a read path is a real fix with no
   effect to report, since reads are not effects.
 
-Of the 788 lines about how, 157 say that a check which stood before an effect is gone, and come
-first. 91% say what changed: the calls, fields and values that are new or gone ("changed the check
+Of the 746 lines about how, 154 say that a check which stood before an effect is gone, and come
+first. 95% say what changed: the calls, fields and values that are new or gone ("changed the check
 before it deletes XxlJobLog (in XxlJobAdminConfig.getLogretentiondays: 7 → 3)"), what a call is
 given differently ("ClusterService.createCluster now also given operator"), or failing those what
 else did ("RabbitTemplate.convertAndSend now called once, not twice"). 2% say only the kind of
@@ -86,7 +86,7 @@ must be one the map says can cause it, and each other method one the map has a p
 
 No run did anything the map says it cannot. Spring PetClinic and PetClinic REST were run again
 under 0.2.3 by the `measure` workflow, with the same result (the outputs are in
-`experiments/2026-10/verify-0.2.3`). In Apollo, 15 effects were caused by tests that call
+`experiments/2026-10/verify-0.2.4`). In Apollo, 15 effects were caused by tests that call
 a private method through reflection; `verify` lists them apart, since the map does not follow
 reflection. Getting here took two changes to the agent, both found by this check: it records only
 the first effect on a call, as the map does (a repository's save and the `EntityManager` call
@@ -176,6 +176,35 @@ commit and what 0.2.3 says on the same one, is
   only the diffs, not a person; the table shows both verdicts and the second reader's reason
   wherever they differ.
 
+## Beyond Spring: a serverless application
+
+The nine projects above are Spring applications with annotated routes. The first codebase of
+another shape skimit met was the author's own: an AWS Lambda backend of 282 classes (Dagger,
+DynamoDB, S3, SES, SNS, Algolia, Cognito), where a single handler registers some sixty routes in
+code, `router.addRoute(HttpMethod.POST, "/jobs", this::handleCreateJob)`. Skimit 0.2.3 said "No
+way in causes an effect skimit recognises". Two things were wrong, and both would have hit any
+Lambda or Javalin-style application:
+
+- The handler's only caller was the bridge the compiler adds for a generic interface, so the
+  real method looked called and was not a way in.
+- A route registered by code was not a route.
+
+With those fixed, the map reads 36 routes and a Lambda handler causing 9 effects, with a
+seven-line policy declaring the search index and the user pool as effects. On a 2,200-line
+commit that added two countries' jobs, candidates and salary benchmark, skimit said "No new
+behaviour; 14 changes to how it does what it already did", and the first line was the one a
+reviewer would want: "PUT /candidates/me: no longer checks SouthAfricanLocations.canonicalize
+before it writes the database (DynamoDbClient); new check before it writes the database
+(DynamoDbClient), on SupportedLocations.canonicalize". The other thirteen are about the Job and
+CandidateData records gaining country, currency and salary fields, which every route that writes
+them now writes; they are true, and the same fact said from several ways in. That repetition is
+what the wording changes of the same release address (16 lines became 14, each saying what
+changed where), and the replay above is re-run on every such change to check the nine Spring
+projects did not move.
+
+The codebase is private, so the run is not in this repository; the fixes are, with tests that
+reproduce each in a few lines ([BehaviourTest](../skimit-analyzer/src/test/java/dev/skimit/analyzer/BehaviourTest.java)).
+
 ## The security fixes, again
 
 The [0.1 experiment](experiment.md#security-fixes) picked 21 commits from these histories that fix
@@ -210,8 +239,8 @@ java -jar skimit-analyzer/target/skimit.jar verify target/classes target/test-cl
 ```
 
 The per-commit results, with every line skimit printed, are in
-[experiments/2026-10/feed-0.2.2](../experiments/2026-10/feed-0.2.2); the runtime checks in
-[experiments/2026-10/verify-0.2.0](../experiments/2026-10/verify-0.2.0). The replay on your own
+[experiments/2026-10/feed-0.2.4](../experiments/2026-10/feed-0.2.4); the runtime checks in
+[experiments/2026-10/verify-0.2.4](../experiments/2026-10/verify-0.2.4). The replay on your own
 history, with your own rules, is the number that matters.
 
 ---

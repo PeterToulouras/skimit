@@ -11,7 +11,13 @@ A way in is a method that something outside the program's own code calls:
 
 - **Routes.** Spring MVC mappings, with the class's `@RequestMapping` path and mappings inherited
   from supertypes and interfaces, and JAX-RS resources. A route is named by its verb and path,
-  `POST /api/orders`, so moving its handler to another class or method does not change it.
+  `POST /api/orders`, so moving its handler to another class or method does not change it. A route
+  registered by code is one too: a call handed a path literal and a lambda or method reference,
+  `router.addRoute(HttpMethod.POST, "/jobs", this::createJob)` or `app.get("/jobs", ctx -> ...)`,
+  makes the handler a way in, named by the verb (an enum constant or string given to the call,
+  else the call's own name) and the path. The router that dispatches to it is not credited with
+  what it does. Since a client call with a callback looks the same, a path and a lambda alone are
+  not enough: the handler's type must be the program's own, or a verb must be there.
 - **Jobs, schedules, listeners and events.** `@XxlJob` (named by its job name), `@Scheduled`,
   Kafka, RabbitMQ, JMS and SQS listeners, `@EventListener` and `@TransactionalEventListener`.
 - **Startup and shutdown.** `@PostConstruct`, `main`, and the lifecycle hooks of library types
@@ -21,7 +27,11 @@ A way in is a method that something outside the program's own code calls:
   the threads it starts, and each thread is a way in of its own; a request, job or listener owns
   what it hands to a pool.
 - **Callbacks.** A method of a class that extends a library type, which nothing in the program
-  calls but the library will.
+  calls but the library will. An AWS Lambda handler is named by the event it takes, `lambda
+  CvHandler (SQSEvent)`; a factory a dependency injector generated, or a provider, is the making
+  of what it provides, `constructing AlgoliaService`. The bridge the compiler adds for a generic
+  interface (`handleRequest(Object)` calling `handleRequest(Request)`) is the same method under
+  another name, not a caller.
 
 Code that nothing calls and no known framework runs is not a way in: a service written before its
 route says nothing until the route exists. A way in that causes no effect is not shown.
@@ -154,6 +164,8 @@ it in the same terms.
 
 Lines with the same words are merged across ways in and across methods, so thirty helpers behind
 one write that changed alike are one line; when a few changed in different ways, each says how.
+A change on the way of only some of the ways in another line covers, with the same words and
+effects, joins that line: the methods are what to look at, and they are listed there.
 A check that is gone, on the way to an effect or in a helper that decided it, comes before every
 other line about how.
 

@@ -14,7 +14,7 @@ THEMES = {
 
 # Commits by what skimit diff said: no change in behaviour, only how it does what it already did,
 # a change to what it can do. Every project with the built-in rule and no policy.
-# From experiments/2026-10/feed-0.2.3: python3 docs/charts.py after editing these.
+# From experiments/2026-10/feed-0.2.4: python3 docs/charts.py after editing these.
 REPLAY = [
     ("XXL-JOB", "195 commits, 2024 to 2026", [113, 71, 11]),
     ("Spring PetClinic", "84 commits, 2019 to 2026", [69, 13, 2]),

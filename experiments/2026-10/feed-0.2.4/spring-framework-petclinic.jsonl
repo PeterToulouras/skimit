@@ -1,0 +1,100 @@
+{"sha": "f7ec2b58034889810c89a9597876b51342c64768", "date": "2026-01-31", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "bf06ff2d558d688016970b7666b72048aeaea400", "date": "2026-01-30", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "b1012f78e5babbbe8a4f096a6f350ae06ed88849", "date": "2023-12-30", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "76271709ec7fd08d03bbe912d7ec686c20e63259", "date": "2023-12-27", "headline": "No new behaviour; 2 changes to how it does what it already did.", "broken": 0, "what": 0, "how": 2, "lines": [["CHANGED_HOW", "2 ways in (POST /owners/new, POST /owners/{ownerId}/edit): the code that writes Owner changed (in JdbcOwnerRepositoryImpl.save: now uses JdbcClient.StatementSpec.paramSource, JdbcClient.StatementSpec.update and 2 more; no longer uses NamedParameterJdbcTemplate.update and namedParameterJdbcTemplate; \"UPDATE owners SET first_name=\u2026\" \u2192 \"UPDATE owners\nSET first_name=\u2026\")"], ["CHANGED_HOW", "2 ways in (POST /owners/{ownerId}/pets/new, \u2026): the code that writes Pet changed (in JdbcPetRepositoryImpl.save: now uses JdbcClient.StatementSpec.paramSource, JdbcClient.StatementSpec.update and 2 more; no longer uses NamedParameterJdbcTemplate.update and namedParameterJdbcTemplate; \"UPDATE pets SET name=:name, b\u2026\" \u2192 \"UPDATE pets\nSET name=:name, b\u2026\")"]]}
+{"sha": "8a98e1c2b1d2f90637f3cd9fb2dc5140f60674a1", "date": "2022-11-06", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "084f06e8f6e304ae3a6fd4e1682175cd47969faa", "date": "2022-11-03", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "4ecf8bc486a0166c419e3ece0383b3a6f2e692c0", "date": "2022-01-22", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "2f6cea7bed2c465cd6973bfba1d16613922ab939", "date": "2021-01-24", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "2e45e7c5513e5e620192585f626abeb4c2072a2e", "date": "2021-01-24", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "f8c688a3238e2baac254da6e29e83865bdc4304c", "date": "2020-11-04", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "e1a48c01b7acddb4abe9de4d5cd5f8b93fdeadf5", "date": "2020-04-26", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "9528000794d93049b23125f70b9b9b4a14ac924f", "date": "2020-04-26", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "f7b0c0a7d7f65db5db39cc6d39e82a7a78bc54bb", "date": "2020-04-26", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "0f68cebc5039f4a9f9fea4b6ff01403f14f48bde", "date": "2020-04-26", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "dfda47f92fa61c64d0187f71f89513bf324044f3", "date": "2020-04-26", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "ea0f7c63174c2f73b60188f74316f23a42355d3a", "date": "2020-01-24", "skipped": "did not build"}
+{"sha": "de8b11bbe06177845722fd014c5eacf7d38a9ff1", "date": "2019-06-11", "skipped": "did not build"}
+{"sha": "6a42a51b1362def0e36a6b21584fc74b3dbe1c80", "date": "2018-10-08", "skipped": "did not build"}
+{"sha": "dea680195698e0c326c0b1a1544ed037fcb8f002", "date": "2018-06-27", "skipped": "did not build"}
+{"sha": "03a1724e223561e576dade3cec32ef8296c1bfe9", "date": "2018-06-20", "skipped": "did not build"}
+{"sha": "10be25cac9fe4389c287be4a878b3e6f77994e02", "date": "2018-03-19", "skipped": "did not build"}
+{"sha": "319c979e6d4547f771f379b45d6e19267fee0a8c", "date": "2017-01-23", "skipped": "did not build"}
+{"sha": "e804220bfa5227ac3f7a55ad9c566c416d96516e", "date": "2017-01-20", "skipped": "did not build"}
+{"sha": "5f85c993c0c7ed7bd023bc87ef03399ee114e49b", "date": "2016-10-26", "skipped": "did not build"}
+{"sha": "efda9aecef224029a16000092a417c9b668163ca", "date": "2016-10-07", "skipped": "did not build"}
+{"sha": "2b757259a2f9c58a608a655f5f9211240bc46228", "date": "2016-09-23", "skipped": "did not build"}
+{"sha": "358c819725785b2a9c7d60046f597cb07bedff4c", "date": "2016-09-14", "skipped": "did not build"}
+{"sha": "08f58b3833c3da56571adc89ca6ac5d68e44b67d", "date": "2016-07-06", "skipped": "did not build"}
+{"sha": "356e5d18b5cda078473f4754fef145d6d5ebd6d5", "date": "2016-06-28", "skipped": "did not build"}
+{"sha": "b4d1d8590cc8a0e709c694ce54309899d7c7f777", "date": "2016-06-28", "skipped": "did not build"}
+{"sha": "6beb00237be47290b1787c7e62171cde3dfddfd4", "date": "2016-06-24", "skipped": "did not build"}
+{"sha": "63aabbe375373afeb183511d126e383751017fc6", "date": "2016-06-15", "skipped": "did not build"}
+{"sha": "d2d21b3e21799efe7816a6bd93123ebe55cc6698", "date": "2016-05-13", "skipped": "did not build"}
+{"sha": "e00dfb3fe05cef910495b38d5a24221188e2e1a6", "date": "2015-11-02", "skipped": "did not build"}
+{"sha": "92de6557e10b610f3ea6579a6be67c53c4f766bc", "date": "2015-10-28", "skipped": "did not build"}
+{"sha": "4aa89ae4e2b75e37aa8869b48ab1908e61af74e0", "date": "2015-10-28", "skipped": "did not build"}
+{"sha": "dd552f497084f240eec49e4373de5f6a2af64b0a", "date": "2015-10-26", "skipped": "did not build"}
+{"sha": "3bcf84543ec586173731942a83178eed561f7d3a", "date": "2015-10-23", "skipped": "did not build"}
+{"sha": "2270e2466b58006f94d6ed9bee3c18e3d4bc408c", "date": "2015-10-16", "skipped": "did not build"}
+{"sha": "09ed33a5fc01209b4190c74f405b2b1e523b739c", "date": "2015-10-16", "skipped": "did not build"}
+{"sha": "4bb829cbd1026ec10dc685277467d30523c90b95", "date": "2015-10-13", "skipped": "did not build"}
+{"sha": "f7498c79df1ce585d4025f3f64d34d205143c868", "date": "2015-10-02", "skipped": "did not build"}
+{"sha": "5a6c108efbb0df1f32258e97981957bbaccae29c", "date": "2015-09-30", "skipped": "did not build"}
+{"sha": "06be7eb5bee7792109ef00302506888312429819", "date": "2015-08-20", "skipped": "did not build"}
+{"sha": "91d19d17b817eb7c24593ea3a3c1ef52374b2eee", "date": "2015-08-19", "skipped": "did not build"}
+{"sha": "0fdd1504b43c789727834fa7d2cd362d08833c71", "date": "2015-06-29", "skipped": "did not build"}
+{"sha": "8b625617cb24353ee906fab080c7677a6ec37870", "date": "2015-06-29", "skipped": "did not build"}
+{"sha": "80ff54ac03c32d5974b2e5e6e9ed6bde10402372", "date": "2015-06-29", "headline": "No new behaviour; 2 changes to how it does what it already did.", "broken": 0, "what": 0, "how": 2, "lines": [["CHANGED_HOW", "POST /owners/{ownerId}/pets/new: writes Pet no longer using PetValidator.validate and new PetValidator (in PetController.processCreationForm)"], ["CHANGED_HOW", "PUT /owners/{ownerId}/pets/{petId}/edit: writes Pet no longer using PetValidator.validate and new PetValidator (in PetController.processUpdateForm)"]]}
+{"sha": "71f2424542b7b8998dc40762a89dc9587cedac96", "date": "2015-06-24", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "6f6fa64dd78a113e1284091fc533e1921b4900e9", "date": "2015-06-24", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "735fb1149b5f1e8371242313678ae41fb4cc9dc7", "date": "2015-06-17", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "dc0fb9abd898336d3da51aed799defe2ea4dfce4", "date": "2015-06-17", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "5570366cfd960bc64fd688bc8f82d54f18772ead", "date": "2015-06-17", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "8d20340518d5d0b4f3dea577ce1abdb1655d2750", "date": "2015-06-09", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "fb644658026099b661d82241ac1cb2f1dcec09b2", "date": "2015-06-09", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "818529b5b10bbf2f5ef861f0439ef1d84fc69577", "date": "2015-06-09", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "c8e360298b80599c24162e4483facc4b1dd0bfb1", "date": "2015-05-13", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "80c1d243a1be4fbec7e879dafcecb6d7036d1e0c", "date": "2015-05-12", "headline": "No change to what any way in writes, deletes, sends or calls.", "broken": 0, "what": 0, "how": 0, "lines": []}
+{"sha": "38a5b28e294b2d0827cf626cb68533a557e3a9e8", "date": "2015-04-14", "skipped": "did not build"}
+{"sha": "cc4ae966c63610344313e6c7bf81ae7219ab8370", "date": "2015-01-21", "skipped": "did not build"}
+{"sha": "35a179f88b4ba301612957f953121c85a1cdfd83", "date": "2015-01-20", "skipped": "did not build"}
+{"sha": "3e4512781e0f7cc4e9ed6a240213f0934d8398d5", "date": "2015-01-16", "skipped": "did not build"}
+{"sha": "1c9b40124869f350c84a953fd62d7582965b8ca5", "date": "2015-01-16", "skipped": "did not build"}
+{"sha": "5c9ab6bd06b033afce6c2b5af1e251ad0836300b", "date": "2015-01-16", "skipped": "did not build"}
+{"sha": "f0bf6927674a8c4fdf5a74352749ca5be326b5d3", "date": "2014-11-28", "skipped": "did not build"}
+{"sha": "475f5f534910aa2bff5563eab9c4eec486430e48", "date": "2014-10-18", "skipped": "did not build"}
+{"sha": "74f683aaa94e8f3dd27bbcb1e9da0c62d02d3fd3", "date": "2014-10-18", "skipped": "did not build"}
+{"sha": "de73bdce6bb7717a0a04fe99ffced0f30e133276", "date": "2014-07-07", "skipped": "did not build"}
+{"sha": "67ae72f3246e4d7ee2525189555eb0c769a7a3e9", "date": "2014-03-23", "skipped": "did not build"}
+{"sha": "35a94eaa5dd81fbda1c8ff7c40f40e701bfbf263", "date": "2014-03-03", "skipped": "did not build"}
+{"sha": "34d8ca46ac9add81362532e41461ceb52aa67fbc", "date": "2013-11-06", "skipped": "did not build"}
+{"sha": "4c01d60b36de22110cf03f4026428d7b0bfb6b42", "date": "2013-07-25", "skipped": "did not build"}
+{"sha": "e50583f58eb70693178d5d95112007de3e4fd152", "date": "2013-07-12", "skipped": "did not build"}
+{"sha": "f0b00da185b9e1e232c2e528132ebb457e011ed9", "date": "2013-05-27", "skipped": "did not build"}
+{"sha": "bca9c48e9247237b39efb84178ac5a51b7f0d597", "date": "2013-05-25", "skipped": "did not build"}
+{"sha": "2b0d07bbbae512120ee0a3171972264e60548507", "date": "2013-05-25", "skipped": "did not build"}
+{"sha": "840c0a417dc0a19312c29a6d7b3bf280604ec021", "date": "2013-05-09", "skipped": "did not build"}
+{"sha": "5bf31dbe5a8858430b3b0a3ef9c640e236950c49", "date": "2013-05-09", "skipped": "did not build"}
+{"sha": "80159fa3d752dedbdef33108b08723a5981b5ab1", "date": "2013-05-07", "skipped": "did not build"}
+{"sha": "993257f5a8ca5060b01660ef39611732e3a72082", "date": "2013-04-18", "skipped": "did not build"}
+{"sha": "f1603221a230093d71059d64793502d0cffe0bb5", "date": "2013-03-18", "skipped": "did not build"}
+{"sha": "fa1e1a8f86c574b765d65b26fd858e0d28ae81fc", "date": "2013-03-15", "skipped": "did not build"}
+{"sha": "8e59a812e3c90a5d40fe37c2917529d52262e9e0", "date": "2013-03-15", "skipped": "did not build"}
+{"sha": "c0d183ce3dfd767ab27e5c5464890682980c35ee", "date": "2013-03-15", "skipped": "did not build"}
+{"sha": "024811d252f8d8218e6795d46203cff25971bc19", "date": "2013-03-14", "skipped": "did not build"}
+{"sha": "c4dbb1f6485d55009417bc029966cd2434dcb079", "date": "2013-03-11", "skipped": "did not build"}
+{"sha": "3fe122db45e742eac04c5f050e6788852b0762b2", "date": "2013-03-11", "skipped": "did not build"}
+{"sha": "e0ba8bfa74bcc0cf8aa08da5a53d0f5c6ecf6911", "date": "2013-03-11", "skipped": "did not build"}
+{"sha": "842f9ac9ec6b28172d6bcfd6469fa39bcdd2504e", "date": "2013-03-11", "skipped": "did not build"}
+{"sha": "d28f4e5257aee8ba0bce8afb46f7b6a74a1c8f04", "date": "2013-02-25", "skipped": "did not build"}
+{"sha": "14f882221f9f12de71331ce3eac44c297150c373", "date": "2013-02-19", "skipped": "did not build"}
+{"sha": "cec81102361803190249864308b8e25b816421dc", "date": "2013-02-19", "skipped": "did not build"}
+{"sha": "54a0186dd42e8cc5a22774c87eb4eef81679d615", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "790ebb5da013497c302fba1e79510515b5d58c61", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "a81b3330e326b8c959cfd7957c96f3111a9125fb", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "d9cce68cff6b6875cc5fbcbf0d135a16c128df06", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "7a5af7a13b39f5c73919a6eaf74fc67957771aed", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "254d05a00842ace434d227ac8a7675452ee7888b", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "0c09ec3bd1e89b8a33032aec6091a2bbce19e2fa", "date": "2013-02-14", "skipped": "did not build"}
+{"sha": "c5ca72e80bf66260e872737957fdaf14a04b638e", "date": "2013-02-13", "skipped": "did not build"}

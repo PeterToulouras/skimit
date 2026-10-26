@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.2.4
+
+Found by running skimit on a serverless Java application of the author's (AWS Lambda, routes
+registered in code), where 0.2.3 said "No way in causes an effect skimit recognises":
+
+- **A route registered by code is a way in.** `router.addRoute(HttpMethod.POST, "/jobs",
+  this::createJob)` or `app.get("/jobs", ctx -> ...)` makes the handler a way in named `POST
+  /jobs`, as an annotated route would be; the router that dispatches to it is not credited with
+  what it does. A path and a lambda alone are not enough, since a client call with a callback
+  looks the same: the handler's type must be the program's own, or a verb must be there.
+- **A compiler bridge is not a caller.** A class implementing a generic library interface
+  (`RequestHandler<Request, Response>`) gets a `handleRequest(Object)` bridge that calls the real
+  method, which made the real method look called and so not a way in. The application's only
+  entry points were lost to this.
+- **Email sent through Amazon SES is email sent**, as JavaMail already was.
+- **An AWS Lambda handler is named by the event it takes**: `lambda CvHandler (SQSEvent)` rather
+  than `RequestHandler callback CvHandler.handleRequest`. A factory a dependency injector
+  generated is `constructing AlgoliaService`, not `Factory callback AlgoliaService_Factory.create`.
+- **Files in S3 are files**, not "the database (S3Client)".
+- **A line about a wide change reads shorter.** Verbs on one store are said together ("deletes
+  and writes the database (DynamoDbClient)"); arguments of one type are counted ("now also takes
+  2 Strings and 3 Optionals", not "a String and a String and an Optional and…"); and a change on
+  the way of only some of the ways in another line covers, with the same words and effects, joins
+  that line. On the 2,200-line commit that prompted this, 16 lines became 14, and the ones that stayed say what changed where.
+- **An empty map says what it saw.** "No way in causes an effect skimit recognises" now goes on
+  to say how many ways in were found that cause nothing, and what code nothing calls would do,
+  so that a missing way in or effect can be told from a program that does nothing.
+
 ## 0.2.3
 
 Found by injecting 25 known changes into the example shop and reading what skimit said

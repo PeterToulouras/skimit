@@ -78,12 +78,13 @@ class AnalysisTest {
         """
         public class Api {
           Ledger l; Router router = new Router();
-          void wire() { router.add("/pay", this::pay); router.add("/info", this::info); }
+          void wire() { router.add("pay", this::pay); router.add("info", this::info); }
           void pay() { l.post(1); }
           void info() { describe(); }
           void describe() { }
         }""");
-    // The dispatcher reaches the sink; registering a route does not call it.
+    // The dispatcher reaches the sink; registering a route does not call it. (Keys that are paths would make
+    // each handler a way in of its own; see BehaviourTest.)
     assertEquals(List.of("Router.dispatch", "Api.pay", "Ledger.post"), causes(a, "Router", "dispatch").get("writes MONEY via Ledger"));
     assertFalse(reaches(a, "Api", "wire"));
     // The other route is an alternative at the same call, not part of the payment flow.

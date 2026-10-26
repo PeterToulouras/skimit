@@ -38,7 +38,21 @@ public final class Output {
     Map<String, Long> kinds = b.entries.values().stream().filter(e -> !e.kind().equals("uncalled"))
         .collect(Collectors.groupingBy(Behaviour.Entry::kind, TreeMap::new, Collectors.counting()));
     long ways = kinds.values().stream().mapToLong(Long::longValue).sum();
-    if (ranked.isEmpty()) return sb.append("No way in causes an effect skimit recognises.\n").toString();
+    if (ranked.isEmpty()) {
+      sb.append("No way in causes an effect skimit recognises.\n");
+      // What was seen helps say why: ways in that reach nothing, or effects only code nothing calls reaches.
+      Set<Effect> stranded = new java.util.TreeSet<>();
+      for (Behaviour.Entry e : b.entries.values()) if (e.kind().equals("uncalled")) stranded.addAll(b.effects.get(e.id()).keySet());
+      List<String> notes = new ArrayList<>();
+      if (!b.quiet.isEmpty()) notes.add(b.quiet.size() + (b.quiet.size() == 1 ? " way in was found that causes nothing" : " ways in were found that cause nothing"));
+      if (!stranded.isEmpty()) notes.add("code nothing calls " + Feed.effectList(stranded));
+      if (!notes.isEmpty()) {
+        String said = String.join("; ", notes);
+        sb.append('\n').append(Character.toUpperCase(said.charAt(0))).append(said.substring(1))
+            .append(". A way in or an effect skimit does not know would look like this; see docs/limits.md.\n");
+      }
+      return sb.toString();
+    }
     sb.append(ways).append(ways == 1 ? " way in (" : " ways in (")
         .append(kinds.entrySet().stream().map(e -> kind(e.getKey(), e.getValue())).collect(Collectors.joining(", ")))
         .append(") can cause ").append(ranked.size()).append(ranked.size() == 1 ? " effect.\n\n" : " effects.\n\n");

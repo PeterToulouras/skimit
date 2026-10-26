@@ -220,9 +220,9 @@ final class PathChange {
       }
       added.removeAll(said);
       gone.removeAll(said);
-      if (gone.isEmpty() && !added.isEmpty()) parts.add("now also " + verb + " " + String.join(" and ", added));
-      else if (added.isEmpty() && !gone.isEmpty()) parts.add("no longer " + verb + " " + String.join(" and ", gone));
-      else if (!added.isEmpty()) parts.add("now " + verb + " " + String.join(" and ", added) + " instead of " + String.join(" and ", gone));
+      if (gone.isEmpty() && !added.isEmpty()) parts.add("now also " + verb + " " + counted(added));
+      else if (added.isEmpty() && !gone.isEmpty()) parts.add("no longer " + verb + " " + counted(gone));
+      else if (!added.isEmpty()) parts.add("now " + verb + " " + counted(added) + " instead of " + counted(gone));
     }
     if (!was.returns().equals(now.returns())) parts.add("now returns " + now.returns() + ", not " + was.returns());
     return parts.isEmpty() ? null : String.join(", and ", parts);
@@ -249,6 +249,22 @@ final class PathChange {
   private static String said(Call c, int i) {
     String g = c.given().get(i);
     return g != null ? g : article(c.takes().get(i));
+  }
+
+  /** Several of a type together: "a String and a String and an Optional" is "2 Strings and an Optional". */
+  private static String counted(List<String> words) {
+    Map<String, Integer> n = new java.util.LinkedHashMap<>();
+    for (String w : words) n.merge(w, 1, Integer::sum);
+    List<String> out = new ArrayList<>();
+    n.forEach((w, k) -> {
+      if (k > 1 && w.matches("an? [A-Z]\\w*(\\[\\])*")) {
+        String type = w.substring(w.indexOf(' ') + 1);
+        out.add(k + " " + (type.matches(".*(s|x|ch|sh)$") ? type + "es" : type + "s"));
+      } else {
+        for (int i = 0; i < k; i++) out.add(w);
+      }
+    });
+    return String.join(" and ", out);
   }
 
   private static String article(String type) {

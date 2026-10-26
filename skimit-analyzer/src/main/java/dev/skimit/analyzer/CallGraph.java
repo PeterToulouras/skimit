@@ -316,7 +316,8 @@ public final class CallGraph {
     return out;
   }
 
-  private static Handle implementation(InvokeDynamicInsnNode indy) {
+  /** The method a lambda or method reference runs, or null when this is not one. */
+  static Handle implementation(InvokeDynamicInsnNode indy) {
     if (!indy.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")) return null;
     for (Object arg : indy.bsmArgs) if (arg instanceof Handle h && h.getTag() >= Opcodes.H_INVOKEVIRTUAL) return h;
     return null;

@@ -32,6 +32,13 @@ final class Compiler {
     return compile(List.of(), sources);
   }
 
+  /** As {@link #analyze(String...)}, with stand-ins for library types the sources use, which are not part of the program. */
+  static Analysis analyzeAgainst(List<String> library, String... sources) throws IOException {
+    Path lib = compile(library.toArray(String[]::new));
+    List<String> options = List.of("-cp", lib + java.io.File.pathSeparator + System.getProperty("java.class.path"));
+    return new Analysis(Program.load(List.of(compile(options, sources))), Policy.defaults());
+  }
+
   static Path compile(List<String> extra, String... sources) throws IOException {
     Path out = Files.createTempDirectory("skimit-test");
     List<JavaFileObject> units = new ArrayList<>();
@@ -46,7 +53,8 @@ final class Compiler {
     }
     JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
     // As Maven and Gradle compile by default: with local variable names.
-    List<String> options = new ArrayList<>(List.of("-g", "-d", out.toString(), "-cp", System.getProperty("java.class.path")));
+    List<String> options = new ArrayList<>(List.of("-g", "-d", out.toString()));
+    if (!extra.contains("-cp")) options.addAll(List.of("-cp", System.getProperty("java.class.path")));
     options.addAll(extra);
     if (!javac.getTask(null, null, null, options, null, units).call()) {
       throw new IllegalStateException("test sources did not compile");

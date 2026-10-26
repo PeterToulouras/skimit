@@ -13,11 +13,22 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.Frame;
+import org.objectweb.asm.tree.analysis.SourceInterpreter;
+import org.objectweb.asm.tree.analysis.SourceValue;
 
 /**
  * What one version of the program does, as a reader who never opens the code needs it: the ways
@@ -67,6 +78,8 @@ public final class Behaviour {
   final Map<String, Set<MethodKey>> runs = new HashMap<>();
   /** The calls where each effect happens. */
   private final Map<Effect, List<Node>> effectNodes = new HashMap<>();
+  /** Handlers registered as routes by code, with the route each answers to. */
+  private final Map<MethodKey, String> codeRoutes;
 
   List<Node> nodesOf(Effect e) {
     return effectNodes.getOrDefault(e, List.of());
@@ -77,6 +90,7 @@ public final class Behaviour {
     CallGraph g = analysis.graph;
     moduleClosure();
     findClients();
+    codeRoutes = codeRoutes();
     Map<Node, Effect> effectAt = new HashMap<>();
     for (Set<Node> callees : new ArrayList<>(g.callees.values())) {
       for (Node n : callees) {
@@ -172,6 +186,8 @@ public final class Behaviour {
       }
       for (Node next : analysis.graph.calleesOf(n)) {
         if (from.containsKey(next) || elsewhere.contains(next)) continue;
+        // A router that reaches a handler it registered is dispatching to a way in of its own.
+        if (codeRoutes.containsKey(next.method()) && !codeRoutes.containsKey(n.method())) continue;
         Integer module = analysis.graph.program.origin.get(next.method().owner());
         if (modules != null && module != null && !modules.contains(module)) continue;
         from.put(next, n);
@@ -244,6 +260,8 @@ public final class Behaviour {
         "software.amazon.awssdk.services.sqs.SqsClient#sendMessage*", "software.amazon.awssdk.services.sns.SnsClient#publish",
         "org.springframework.mail.javamail.JavaMailSender#send", "org.springframework.mail.MailSender#send",
         "jakarta.mail.Transport#send", "javax.mail.Transport#send",
+        "software.amazon.awssdk.services.ses.SesClient#send*", "software.amazon.awssdk.services.sesv2.SesV2Client#send*",
+        "com.amazonaws.services.simpleemail.AmazonSimpleEmailService#send*",
     }) MESSAGES.add(Policy.rule("SENDS", s));
   }
 
@@ -273,7 +291,7 @@ public final class Behaviour {
     for (Policy.Rule r : OUTBOUND) if (r.matches(m.owner(), m.name())) return new Effect("calls", "out over HTTP");
     for (Policy.Rule r : MESSAGES) {
       if (r.matches(m.owner(), m.name())) {
-        String what = m.owner().contains("mail") ? "email" : "a message";
+        String what = m.owner().contains("mail") || m.owner().contains("/ses") ? "email" : "a message";
         return new Effect("sends", what + " (" + simple(m.owner()) + ")");
       }
     }
@@ -346,7 +364,9 @@ public final class Behaviour {
   String storeName(String owner) {
     String store = analysis.graph.storeOf(owner);
     String name = simple(store != null ? store : owner);
-    if (!analysis.graph.program.classes.containsKey(store != null ? store : owner)) return "the database (" + name + ")";
+    if (!analysis.graph.program.classes.containsKey(store != null ? store : owner)) {
+      return (name.contains("S3") ? "files (" : "the database (") + name + ")";
+    }
     String bare = STORE_SUFFIX.matcher(name).replaceFirst("");
     bare = STORE_PREFIX.matcher(bare).replaceFirst("");
     return bare.isEmpty() ? name : bare;
@@ -376,7 +396,10 @@ public final class Behaviour {
     CallGraph g = analysis.graph;
     ClassNode cn = g.program.classes.get(m.owner());
     MethodNode mn = g.methods.get(m);
-    if (cn == null || mn == null || (mn.access & Opcodes.ACC_SYNTHETIC) != 0 && CallGraph.enclosing(m) == null) return null;
+    if (cn == null || mn == null) return null;
+    String coded = codeRoutes.get(m);
+    if (coded != null) return new Entry(coded, "route", m);
+    if ((mn.access & Opcodes.ACC_SYNTHETIC) != 0 && CallGraph.enclosing(m) == null) return null;
     if (m.name().equals("<init>") || m.name().equals("<clinit>")) return null;
 
     String route = route(cn, mn);
@@ -399,8 +422,10 @@ public final class Behaviour {
     }
     // Code that nothing in the program calls but that runs anyway: a thread's body, a callback a
     // library holds, a framework hook. Its name is where it lives.
+    // A bridge the compiler made for a generic interface (handleRequest(Object) calling
+    // handleRequest(Request)) is the same method under another name, not a caller.
     boolean called = false;
-    for (Node n : nodes) called |= !g.callersOf(n).isEmpty();
+    for (Node n : nodes) for (Node c : g.callersOf(n)) called |= !(bridge(c.method()) && g.callersOf(c).isEmpty());
     if (called || (mn.access & Opcodes.ACC_PRIVATE) != 0 && CallGraph.enclosing(m) == null) return null;
     if (isThreadBody(m)) return threadEntry(m);
     String lib = g.shape(m.owner()).libraryParent();
@@ -409,12 +434,97 @@ public final class Behaviour {
       String label = lifecycle + " " + outer(m.owner());
       return new Entry(label, "startup", m);
     }
+    if (lib != null && LAMBDA_HANDLERS.contains(lib)) {
+      // An AWS Lambda handler, named by the event it takes: "lambda CvHandler (SQSEvent)".
+      Type[] args = Type.getArgumentTypes(m.desc());
+      String event = args.length > 0 && args[0].getSort() == Type.OBJECT ? " (" + simple(args[0].getInternalName()) + ")" : "";
+      return new Entry("lambda " + simple(m.owner()) + event, "lambda", m);
+    }
+    if (lib != null && PROVIDERS.contains(lib)) {
+      // A factory a dependency injector generated, or a provider: what runs is the making of what it provides.
+      return new Entry("constructing " + simple(m.owner()).replaceAll("_(Factory|MembersInjector)$", ""), "startup", m);
+    }
     String where = CallGraph.enclosing(m) != null ? "code started in " + simple(m.owner()) + "." + CallGraph.enclosing(m)
         : lib != null ? simple(lib) + " callback " + outer(m.owner()) + "." + m.name()
         : "uncalled " + simple(m.owner()) + "." + m.name();
     String kind = CallGraph.enclosing(m) != null ? "thread" : lib != null ? "callback" : "uncalled";
     return new Entry(where, kind, m);
   }
+
+  private boolean bridge(MethodKey m) {
+    MethodNode mn = analysis.graph.methods.get(m);
+    return mn != null && (mn.access & Opcodes.ACC_BRIDGE) != 0;
+  }
+
+  /**
+   * Routes registered by code rather than by annotation: a call handed a path literal and a lambda
+   * or method reference, such as router.addRoute(HttpMethod.POST, "/jobs", this::createJob) or
+   * app.get("/jobs", ctx -> ...). The handler is the way in, named by the verb (an enum constant or
+   * string given to the call, else the call's own name) and the path. A path and a lambda alone
+   * are not enough, since a client call with a callback looks the same: the handler's type must
+   * be the program's own, or a verb must be there.
+   */
+  private Map<MethodKey, String> codeRoutes() {
+    Map<MethodKey, String> out = new TreeMap<>();
+    CallGraph g = analysis.graph;
+    for (ClassNode cn : g.program.classes.values()) {
+      for (MethodNode mn : cn.methods) {
+        if (!registersRoutes(mn)) continue;
+        Frame<SourceValue>[] frames;
+        try {
+          frames = new Analyzer<>(new SourceInterpreter()).analyze(cn.name, mn);
+        } catch (AnalyzerException | RuntimeException e) {
+          continue;
+        }
+        for (int i = 0; i < mn.instructions.size(); i++) {
+          if (!(mn.instructions.get(i) instanceof MethodInsnNode mi) || frames[i] == null) continue;
+          Type[] args = Type.getArgumentTypes(mi.desc);
+          int base = frames[i].getStackSize() - args.length;
+          if (base < 0) continue;
+          String path = null;
+          String verb = null;
+          MethodKey handler = null;
+          boolean own = false;
+          for (int j = 0; j < args.length; j++) {
+            for (AbstractInsnNode src : frames[i].getStack(base + j).insns) {
+              if (src instanceof LdcInsnNode ldc && ldc.cst instanceof String s) {
+                if (s.startsWith("/")) path = s;
+                else if (HTTP_VERBS.contains(s.toUpperCase())) verb = s.toUpperCase();
+              } else if (src instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && HTTP_VERBS.contains(f.name)) {
+                verb = f.name;
+              } else if (src instanceof InvokeDynamicInsnNode indy) {
+                Handle h = CallGraph.implementation(indy);
+                MethodKey body = h == null ? null : new MethodKey(h.getOwner(), h.getName(), h.getDesc());
+                if (body == null || !g.nodesOf.containsKey(body)) continue;
+                handler = body;
+                own = args[j].getSort() == Type.OBJECT && g.program.classes.containsKey(args[j].getInternalName());
+              }
+            }
+          }
+          if (verb == null && HTTP_VERBS.contains(mi.name.toUpperCase())) verb = mi.name.toUpperCase();
+          if (path == null || handler == null || !own && verb == null) continue;
+          out.putIfAbsent(handler, (verb == null ? "" : verb + " ") + path);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Has both a path literal and a lambda or method reference: the cheap test before the frames are built. */
+  private static boolean registersRoutes(MethodNode mn) {
+    boolean path = false;
+    boolean lambda = false;
+    for (AbstractInsnNode insn : mn.instructions) {
+      path |= insn instanceof LdcInsnNode ldc && ldc.cst instanceof String s && s.startsWith("/");
+      lambda |= insn instanceof InvokeDynamicInsnNode;
+    }
+    return path && lambda;
+  }
+
+  private static final Set<String> LAMBDA_HANDLERS = Set.of("com/amazonaws/services/lambda/runtime/RequestHandler",
+      "com/amazonaws/services/lambda/runtime/RequestStreamHandler");
+  private static final Set<String> PROVIDERS = Set.of("dagger/internal/Factory", "dagger/MembersInjector",
+      "javax/inject/Provider", "jakarta/inject/Provider");
 
   /** Framework hooks by name: when they run tells the reader more than the interface they belong to. */
   private static final Map<String, String> LIFECYCLE = Map.of(
