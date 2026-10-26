@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4
 
 Found by running skimit on a serverless Java application of the author's (AWS Lambda, routes
 registered in code), where 0.2.3 said "No way in causes an effect skimit recognises":

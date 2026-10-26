@@ -46,15 +46,15 @@ which that run left out, so its `httpJobHandler` job counts as a way in.
   on ClinicService.findOwnerById; writes Pet now using ClinicService.findOwnerById, no longer new
   Owner`.
 - **It fits on a screen.** Of the 205 commits that had something to say, the median said 2 lines
-  and 179 (87%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move of its
-  portal to a new version of its API, said 99, broadest first.
+  and 180 (88%) said 7 or fewer, so nothing was folded away. The largest, Apollo's move of its
+  portal to a new version of its API, said 98, broadest first.
 - **Bug fixes** (measured under 0.2.2). 157 of the commits say they fix something. 64 of them
   changed behaviour by skimit's account (62 how, 2 what). The other 93 changed nothing a way in does: error messages,
   display, logging, configuration, read paths, typos. A fix in a read path is a real fix with no
   effect to report, since reads are not effects.
 
-Of the 788 lines about how, 157 say that a check which stood before an effect is gone, and come
-first. 91% say what changed: the calls, fields and values that are new or gone ("changed the check
+Of the 746 lines about how, 154 say that a check which stood before an effect is gone, and come
+first. 95% say what changed: the calls, fields and values that are new or gone ("changed the check
 before it deletes XxlJobLog (in XxlJobAdminConfig.getLogretentiondays: 7 → 3)"), what a call is
 given differently ("ClusterService.createCluster now also given operator"), or failing those what
 else did ("RabbitTemplate.convertAndSend now called once, not twice"). 2% say only the kind of
@@ -86,7 +86,7 @@ must be one the map says can cause it, and each other method one the map has a p
 
 No run did anything the map says it cannot. Spring PetClinic and PetClinic REST were run again
 under 0.2.3 by the `measure` workflow, with the same result (the outputs are in
-`experiments/2026-10/verify-0.2.3`). In Apollo, 15 effects were caused by tests that call
+`experiments/2026-10/verify-0.2.4`). In Apollo, 15 effects were caused by tests that call
 a private method through reflection; `verify` lists them apart, since the map does not follow
 reflection. Getting here took two changes to the agent, both found by this check: it records only
 the first effect on a call, as the map does (a repository's save and the `EntityManager` call
@@ -239,8 +239,8 @@ java -jar skimit-analyzer/target/skimit.jar verify target/classes target/test-cl
 ```
 
 The per-commit results, with every line skimit printed, are in
-[experiments/2026-10/feed-0.2.3](../experiments/2026-10/feed-0.2.3); the runtime checks in
-[experiments/2026-10/verify-0.2.3](../experiments/2026-10/verify-0.2.3). The replay on your own
+[experiments/2026-10/feed-0.2.4](../experiments/2026-10/feed-0.2.4); the runtime checks in
+[experiments/2026-10/verify-0.2.4](../experiments/2026-10/verify-0.2.4). The replay on your own
 history, with your own rules, is the number that matters.
 
 ---
