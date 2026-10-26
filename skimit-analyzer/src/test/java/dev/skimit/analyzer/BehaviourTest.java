@@ -130,6 +130,79 @@ class BehaviourTest {
   }
 
   @Test
+  void anAwsLambdaHandlerIsNamedByTheEventItTakes() throws IOException {
+    List<String> aws = List.of("package com.amazonaws.services.lambda.runtime; public interface RequestHandler<I, O> { O handleRequest(I input, Object context); }");
+    String handler = "public class CvHandler implements com.amazonaws.services.lambda.runtime.RequestHandler<String, String> { OrderRepository repo;"
+        + " public String handleRequest(String event, Object context) { repo.save(event.length()); return \"ok\"; } }";
+    Behaviour b = new Behaviour(Compiler.analyzeAgainst(aws, program(handler)));
+    assertEquals(Map.of("lambda CvHandler (String)", List.of("writes Order")), effects(b));
+  }
+
+  @Test
+  void aFactoryADependencyInjectorMadeIsTheConstructionOfWhatItMakes() throws IOException {
+    List<String> dagger = List.of("package dagger.internal; public interface Factory<T> { T get(); }");
+    String audit = "public class Audit { OrderRepository repo; Audit(OrderRepository repo) { this.repo = repo; repo.save(0); } }";
+    String factory = "public final class Audit_Factory implements dagger.internal.Factory<Audit> { OrderRepository repo;"
+        + " public Audit get() { return new Audit(repo); } }";
+    Behaviour b = new Behaviour(Compiler.analyzeAgainst(dagger, program(audit, factory)));
+    assertEquals(Map.of("constructing Audit", List.of("writes Order")), effects(b));
+  }
+
+  @Test
+  void filesInS3AndEmailThroughSesAreNamedForWhatTheyAre() throws IOException {
+    List<String> aws = List.of("package software.amazon.awssdk.services.s3; public interface S3Client { Object deleteObject(Object r); }",
+        "package software.amazon.awssdk.services.ses; public interface SesClient { Object sendEmail(Object r); }");
+    String purge = """
+        import org.springframework.web.bind.annotation.*;
+        public class Files {
+          software.amazon.awssdk.services.s3.S3Client s3;
+          software.amazon.awssdk.services.ses.SesClient ses;
+          @PostMapping("/files/purge") public void purge(Object r) { s3.deleteObject(r); ses.sendEmail(r); }
+        }""";
+    Behaviour b = new Behaviour(Compiler.analyzeAgainst(aws, program(purge)));
+    assertEquals(Map.of("POST /files/purge", List.of("deletes files (S3Client)", "sends email (SesClient)")), effects(b));
+  }
+
+  @Test
+  void verbsOnOneStoreAreSaidTogether() throws IOException {
+    String both = "public class OrderService { OrderRepository repo; void place(long id) { repo.save(Ids.next(id)); repo.deleteById(Ids.next(id)); } }";
+    Feed f = feed(program("public class Ids { static long next(long id) { return id + 1; } }", both, CONTROLLER),
+        program("public class Ids { static long next(long id) { return id + 2; } }", both, CONTROLLER));
+    assertEquals(List.of("POST /api/orders: deletes and writes Order with different data (in Ids.next: 1 → 2)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void aChangeOnTheWayOfSomeOfTheWaysInJoinsTheLineAboutAllOfThem() throws IOException {
+    // Ids.next is on the way of both routes, Ids.salt of one; with the same words and effect, that is one line.
+    String ids = "public class Ids { static long next(long id) { return id + %s; } static long salt(long id) { return id * %s; } }";
+    String service = "public class OrderService { OrderRepository repo; void place(long id) { repo.save(Ids.next(id)); }"
+        + " void placeFor(long id) { repo.save(Ids.next(Ids.salt(id))); } }";
+    String controller = CONTROLLER.replace("@PostMapping(\"/orders/count\") public long count() { return 0; }",
+        "@PostMapping(\"/orders/for\") public void placeFor(long id) { service.placeFor(id); }");
+    Feed f = feed(program(String.format(ids, "1", "3"), service, controller), program(String.format(ids, "2", "4"), service, controller));
+    assertEquals(List.of("2 ways in (POST /api/orders, POST /api/orders/for): writes Order with different data (in Ids.next: 1 → 2; Ids.salt: 3 → 4)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void whenManyMethodsChangedInTheirOwnWaysTheTwoMostCommonAreSaid() throws IOException {
+    String ids = "public class Ids { static long a(long i) { return i + %s; } static long b(long i) { return i * %s; }"
+        + " static long c(long i) { return i - %s; } static long d(long i) { return i / %s; } }";
+    String service = "public class OrderService { OrderRepository repo; void place(long id) { repo.save(Ids.a(Ids.b(Ids.c(Ids.d(id))))); } }";
+    Feed f = feed(program(String.format(ids, "1", "3", "5", "7"), service, CONTROLLER), program(String.format(ids, "2", "4", "6", "8"), service, CONTROLLER));
+    assertEquals(List.of("POST /api/orders: writes Order with different data (in Ids.a: 1 → 2; Ids.b: 3 → 4; and 2 more)"),
+        f.lines.stream().map(Feed.Line::text).toList());
+  }
+
+  @Test
+  void argumentsOfOneTypeAreCounted() {
+    assertEquals("now also takes 2 Strings and an Optional",
+        PathChange.signature("(J)V", "(JLjava/lang/String;Ljava/lang/String;Ljava/util/Optional;)V"));
+    assertEquals("now also takes a String", PathChange.signature("(J)V", "(JLjava/lang/String;)V"));
+  }
+
+  @Test
   void aThreadThatCausesNothingDoesNotHideAChangeInItsTwinThatWrites() throws IOException {
     // Two threads started in one method share a name; the quiet one must not take over what the other runs.
     String twins = """
@@ -575,7 +648,9 @@ class BehaviourTest {
     String map = Output.map(behaviour(program(SERVICE, CONTROLLER, unused)));
     assertTrue(map.contains("1 way in (1 route) can cause 1 effect."), map);
     assertTrue(map.contains("**writes Order** from 1 way in: `POST /api/orders`"), map);
-    assertEquals("## skimit: what this program does\n\nNo way in causes an effect skimit recognises.\n",
+    // Saying what was seen tells the reader whether a way in or an effect is missing from what skimit knows.
+    assertEquals("## skimit: what this program does\n\nNo way in causes an effect skimit recognises.\n\n"
+        + "Code nothing calls writes Order. A way in or an effect skimit does not know would look like this; see docs/limits.md.\n",
         Output.map(behaviour(program(SERVICE, unused))));
   }
 

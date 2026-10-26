@@ -291,7 +291,7 @@ public final class Behaviour {
     for (Policy.Rule r : OUTBOUND) if (r.matches(m.owner(), m.name())) return new Effect("calls", "out over HTTP");
     for (Policy.Rule r : MESSAGES) {
       if (r.matches(m.owner(), m.name())) {
-        String what = m.owner().contains("mail") ? "email" : "a message";
+        String what = m.owner().contains("mail") || m.owner().contains("/ses") ? "email" : "a message";
         return new Effect("sends", what + " (" + simple(m.owner()) + ")");
       }
     }
@@ -364,7 +364,9 @@ public final class Behaviour {
   String storeName(String owner) {
     String store = analysis.graph.storeOf(owner);
     String name = simple(store != null ? store : owner);
-    if (!analysis.graph.program.classes.containsKey(store != null ? store : owner)) return "the database (" + name + ")";
+    if (!analysis.graph.program.classes.containsKey(store != null ? store : owner)) {
+      return (name.contains("S3") ? "files (" : "the database (") + name + ")";
+    }
     String bare = STORE_SUFFIX.matcher(name).replaceFirst("");
     bare = STORE_PREFIX.matcher(bare).replaceFirst("");
     return bare.isEmpty() ? name : bare;
@@ -431,6 +433,16 @@ public final class Behaviour {
     if (lib != null && lifecycle != null) {
       String label = lifecycle + " " + outer(m.owner());
       return new Entry(label, "startup", m);
+    }
+    if (lib != null && LAMBDA_HANDLERS.contains(lib)) {
+      // An AWS Lambda handler, named by the event it takes: "lambda CvHandler (SQSEvent)".
+      Type[] args = Type.getArgumentTypes(m.desc());
+      String event = args.length > 0 && args[0].getSort() == Type.OBJECT ? " (" + simple(args[0].getInternalName()) + ")" : "";
+      return new Entry("lambda " + simple(m.owner()) + event, "lambda", m);
+    }
+    if (lib != null && PROVIDERS.contains(lib)) {
+      // A factory a dependency injector generated, or a provider: what runs is the making of what it provides.
+      return new Entry("constructing " + simple(m.owner()).replaceAll("_(Factory|MembersInjector)$", ""), "startup", m);
     }
     String where = CallGraph.enclosing(m) != null ? "code started in " + simple(m.owner()) + "." + CallGraph.enclosing(m)
         : lib != null ? simple(lib) + " callback " + outer(m.owner()) + "." + m.name()
@@ -508,6 +520,11 @@ public final class Behaviour {
     }
     return path && lambda;
   }
+
+  private static final Set<String> LAMBDA_HANDLERS = Set.of("com/amazonaws/services/lambda/runtime/RequestHandler",
+      "com/amazonaws/services/lambda/runtime/RequestStreamHandler");
+  private static final Set<String> PROVIDERS = Set.of("dagger/internal/Factory", "dagger/MembersInjector",
+      "javax/inject/Provider", "jakarta/inject/Provider");
 
   /** Framework hooks by name: when they run tells the reader more than the interface they belong to. */
   private static final Map<String, String> LIFECYCLE = Map.of(

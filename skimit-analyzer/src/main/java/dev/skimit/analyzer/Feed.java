@@ -308,7 +308,27 @@ public final class Feed {
       m.methods.addAll(h.methods);
       m.details.putAll(h.details);
     }
-    List<How> sorted = new ArrayList<>(merged.values());
+    // A change on the way of some of the ways in another line covers, with the same words and
+    // effects, joins that line: the methods are what to look at, and they are listed there.
+    List<How> bySize = new ArrayList<>(merged.values());
+    bySize.sort(Comparator.comparingInt((How h) -> -h.ways.size()));
+    List<How> kept = new ArrayList<>();
+    for (How h : bySize) {
+      How into = null;
+      for (How o : kept) {
+        if (o.template.equals(h.template) && o.effects.equals(h.effects) && o.ways.size() > h.ways.size() && o.ways.containsAll(h.ways)) {
+          into = o;
+          break;
+        }
+      }
+      if (into == null) {
+        kept.add(h);
+        continue;
+      }
+      for (MethodKey m : h.methods) if (!into.methods.contains(m)) into.methods.add(m);
+      into.details.putAll(h.details);
+    }
+    List<How> sorted = new ArrayList<>(kept);
     sorted.sort(Comparator.comparing((How h) -> h.effects.stream().noneMatch(x -> x.verb().equals("deletes")))
         .thenComparing(h -> -h.ways.size()).thenComparing(h -> h.template));
     List<Line> out = new ArrayList<>();
@@ -332,9 +352,13 @@ public final class Feed {
     Map<String, List<MethodKey>> byDetail = new java.util.LinkedHashMap<>();
     h.methods.stream().sorted(Comparator.comparing(Feed::shortName))
         .forEach(m -> byDetail.computeIfAbsent(h.details.getOrDefault(m, ""), k -> new ArrayList<>()).add(m));
-    if (byDetail.size() > 3) return names(h.methods);
-    return byDetail.entrySet().stream().map(e -> names(e.getValue()) + (e.getKey().isEmpty() ? "" : ": " + e.getKey()))
-        .collect(Collectors.joining("; "));
+    // When many did, the two that changed in most places, and how many more: better than names alone.
+    List<Map.Entry<String, List<MethodKey>>> groups = new ArrayList<>(byDetail.entrySet());
+    groups.sort(Comparator.comparingInt((Map.Entry<String, List<MethodKey>> e) -> -e.getValue().size()));
+    List<Map.Entry<String, List<MethodKey>>> shown = groups.size() > 3 ? groups.subList(0, 2) : groups;
+    int rest = h.methods.size() - shown.stream().mapToInt(e -> e.getValue().size()).sum();
+    return shown.stream().map(e -> names(e.getValue()) + (e.getKey().isEmpty() ? "" : ": " + e.getKey()))
+        .collect(Collectors.joining("; ")) + (rest > 0 ? "; and " + rest + " more" : "");
   }
 
   /**
@@ -405,9 +429,12 @@ public final class Feed {
     return l.size() <= 2 ? String.join(" and ", l) : String.join(", ", l.subList(0, 2)) + " and " + (l.size() - 2) + " more";
   }
 
-  /** "writes Order", "deletes App and writes Audit", "deletes App, writes Audit and 5 more". */
-  private static String effectList(Set<Effect> effects) {
-    List<String> e = effects.stream().map(Effect::toString).toList();
+  /** "writes Order", "deletes and writes Order", "deletes App and writes Audit", "deletes App, writes Audit and 5 more". */
+  static String effectList(Set<Effect> effects) {
+    // Verbs on one target are said together: "deletes and writes the database (DynamoDbClient)".
+    Map<String, List<String>> byTarget = new java.util.LinkedHashMap<>();
+    for (Effect x : effects) byTarget.computeIfAbsent(x.target(), k -> new ArrayList<>()).add(x.verb());
+    List<String> e = byTarget.entrySet().stream().map(t -> String.join(" and ", t.getValue()) + " " + t.getKey()).toList();
     return e.size() <= 3 ? String.join(" and ", e) : e.get(0) + ", " + e.get(1) + " and " + (e.size() - 2) + " more";
   }
 
