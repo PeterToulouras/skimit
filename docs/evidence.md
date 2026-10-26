@@ -176,6 +176,35 @@ commit and what 0.2.3 says on the same one, is
   only the diffs, not a person; the table shows both verdicts and the second reader's reason
   wherever they differ.
 
+## Beyond Spring: a serverless application
+
+The nine projects above are Spring applications with annotated routes. The first codebase of
+another shape skimit met was the author's own: an AWS Lambda backend of 282 classes (Dagger,
+DynamoDB, S3, SES, SNS, Algolia, Cognito), where a single handler registers some sixty routes in
+code, `router.addRoute(HttpMethod.POST, "/jobs", this::handleCreateJob)`. Skimit 0.2.3 said "No
+way in causes an effect skimit recognises". Two things were wrong, and both would have hit any
+Lambda or Javalin-style application:
+
+- The handler's only caller was the bridge the compiler adds for a generic interface, so the
+  real method looked called and was not a way in.
+- A route registered by code was not a route.
+
+With those fixed, the map reads 36 routes and a Lambda handler causing 9 effects, with a
+seven-line policy declaring the search index and the user pool as effects. On a 2,200-line
+commit that added two countries' jobs, candidates and salary benchmark, skimit said "No new
+behaviour; 14 changes to how it does what it already did", and the first line was the one a
+reviewer would want: "PUT /candidates/me: no longer checks SouthAfricanLocations.canonicalize
+before it writes the database (DynamoDbClient); new check before it writes the database
+(DynamoDbClient), on SupportedLocations.canonicalize". The other thirteen are about the Job and
+CandidateData records gaining country, currency and salary fields, which every route that writes
+them now writes; they are true, and the same fact said from several ways in. That repetition is
+what the wording changes of the same release address (16 lines became 14, each saying what
+changed where), and the replay above is re-run on every such change to check the nine Spring
+projects did not move.
+
+The codebase is private, so the run is not in this repository; the fixes are, with tests that
+reproduce each in a few lines ([BehaviourTest](../skimit-analyzer/src/test/java/dev/skimit/analyzer/BehaviourTest.java)).
+
 ## The security fixes, again
 
 The [0.1 experiment](experiment.md#security-fixes) picked 21 commits from these histories that fix
@@ -210,8 +239,8 @@ java -jar skimit-analyzer/target/skimit.jar verify target/classes target/test-cl
 ```
 
 The per-commit results, with every line skimit printed, are in
-[experiments/2026-10/feed-0.2.2](../experiments/2026-10/feed-0.2.2); the runtime checks in
-[experiments/2026-10/verify-0.2.0](../experiments/2026-10/verify-0.2.0). The replay on your own
+[experiments/2026-10/feed-0.2.3](../experiments/2026-10/feed-0.2.3); the runtime checks in
+[experiments/2026-10/verify-0.2.3](../experiments/2026-10/verify-0.2.3). The replay on your own
 history, with your own rules, is the number that matters.
 
 ---
